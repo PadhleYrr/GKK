@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#1a4a2e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="GKK">
+<meta name="description" content="Gumasta Krishi Kendra - Smart Shop Management">
+<title>GKK — Gumasta Krishi Kendra</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;500;600;700;800&family=Noto+Sans+Devanagari:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- SPLASH SCREEN -->
+<div id="splash">
+  <div class="splash-inner">
+    <div class="splash-leaf">🌿</div>
+    <div class="splash-logo">GKK</div>
+    <div class="splash-name">Gumasta Krishi Kendra</div>
+    <div class="splash-sub">गुमस्ता कृषि केंद्र</div>
+    <div class="splash-loader"><div class="splash-bar"></div></div>
+  </div>
+</div>
+
+<!-- SIDEBAR -->
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-header">
+    <div class="sb-logo">🌿 GKK</div>
+    <div class="sb-shop">Gumasta Krishi Kendra</div>
+    <div class="sb-date" id="sb-date"></div>
+  </div>
+
+  <div class="nav-section">मुख्य / Main</div>
+  <div class="nav-item active" data-page="dashboard" onclick="showPage('dashboard',this)">
+    <span class="ni">🏠</span><span>Dashboard</span>
+  </div>
+  <div class="nav-item" data-page="pos" onclick="showPage('pos',this)">
+    <span class="ni">🧾</span><span>New Bill / बिल बनाएं</span>
+  </div>
+  <div class="nav-item" data-page="orders" onclick="showPage('orders',this)">
+    <span class="ni">📋</span><span>Orders / ऑर्डर</span>
+    <span class="nav-badge" id="nb-orders">0</span>
+  </div>
+
+  <div class="nav-section">स्टॉक / Stock</div>
+  <div class="nav-item" data-page="products" onclick="showPage('products',this)">
+    <span class="ni">📦</span><span>Products / उत्पाद</span>
+  </div>
+  <div class="nav-item" data-page="stock" onclick="showPage('stock',this)">
+    <span class="ni">📊</span><span>Stock / स्टॉक</span>
+    <span class="nav-badge danger" id="nb-stock">0</span>
+  </div>
+  <div class="nav-item" data-page="returns" onclick="showPage('returns',this)">
+    <span class="ni">🔄</span><span>Returns / वापसी</span>
+  </div>
+
+  <div class="nav-section">हिसाब / Finance</div>
+  <div class="nav-item" data-page="ledger" onclick="showPage('ledger',this)">
+    <span class="ni">👥</span><span>Udhar / उधार खाता</span>
+  </div>
+  <div class="nav-item" data-page="profitloss" onclick="showPage('profitloss',this)">
+    <span class="ni">💰</span><span>Profit & Loss</span>
+  </div>
+  <div class="nav-item" data-page="reports" onclick="showPage('reports',this)">
+    <span class="ni">📈</span><span>Reports / रिपोर्ट</span>
+  </div>
+
+  <div class="nav-section">AI सहायक</div>
+  <div class="nav-item" data-page="aiassist" onclick="showPage('aiassist',this)">
+    <span class="ni">🤖</span><span>AI Assistant</span>
+    <span class="nav-badge green">NEW</span>
+  </div>
+  <div class="nav-item" data-page="disease" onclick="showPage('disease',this)">
+    <span class="ni">🔬</span><span>Disease Scanner</span>
+    <span class="nav-badge green">AI</span>
+  </div>
+
+  <div class="nav-bottom">
+    <div class="nav-item" data-page="settings" onclick="showPage('settings',this)">
+      <span class="ni">⚙️</span><span>Settings</span>
+    </div>
+  </div>
+</nav>
+
+<!-- OVERLAY -->
+<div class="overlay" id="overlay" onclick="closeSidebar()"></div>
+
+<!-- MAIN -->
+<main class="main" id="main">
+
+  <!-- TOPBAR -->
+  <div class="topbar">
+    <div class="topbar-left">
+      <button class="hamburger" onclick="toggleSidebar()">☰</button>
+      <div>
+        <div class="page-title" id="pg-title">Dashboard</div>
+        <div class="page-sub" id="pg-sub">आज का अवलोकन</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <button class="icon-btn" onclick="showPage('aiassist', document.querySelector('[data-page=aiassist]'))">🤖</button>
+      <button class="icon-btn" onclick="showPage('pos', document.querySelector('[data-page=pos]'))">➕</button>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       DASHBOARD
+  ══════════════════════════════════════════ -->
+  <div class="page active" id="page-dashboard">
+    <div class="dash-greeting" id="dash-greeting">नमस्ते! 🙏</div>
+
+    <div class="stat-grid">
+      <div class="stat-card green">
+        <div class="stat-icon">💰</div>
+        <div class="stat-info">
+          <div class="stat-val" id="d-today-sale">₹0</div>
+          <div class="stat-lbl">आज की बिक्री</div>
+        </div>
+      </div>
+      <div class="stat-card blue">
+        <div class="stat-icon">📦</div>
+        <div class="stat-info">
+          <div class="stat-val" id="d-total-products">0</div>
+          <div class="stat-lbl">कुल उत्पाद</div>
+        </div>
+      </div>
+      <div class="stat-card orange">
+        <div class="stat-icon">📋</div>
+        <div class="stat-info">
+          <div class="stat-val" id="d-today-bills">0</div>
+          <div class="stat-lbl">आज के बिल</div>
+        </div>
+      </div>
+      <div class="stat-card red">
+        <div class="stat-icon">⚠️</div>
+        <div class="stat-info">
+          <div class="stat-val" id="d-low-stock">0</div>
+          <div class="stat-lbl">कम स्टॉक</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dash-profit-card">
+      <div class="dpc-left">
+        <div class="dpc-label">आज का लाभ / Today's Profit</div>
+        <div class="dpc-val" id="d-today-profit">₹0</div>
+        <div class="dpc-sub" id="d-profit-margin">Margin: 0%</div>
+      </div>
+      <div class="dpc-right">
+        <div class="dpc-label">उधार बाकी / Pending Udhar</div>
+        <div class="dpc-val red" id="d-udhar">₹0</div>
+        <div class="dpc-sub" id="d-udhar-count">0 customers</div>
+      </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="sec-head">Quick Actions</div>
+    <div class="quick-grid">
+      <button class="quick-btn" onclick="showPage('pos', document.querySelector('[data-page=pos]'))">
+        <span>🧾</span><span>New Bill</span>
+      </button>
+      <button class="quick-btn" onclick="showPage('products', document.querySelector('[data-page=products]')); setTimeout(()=>openAddProduct(),300)">
+        <span>➕</span><span>Add Product</span>
+      </button>
+      <button class="quick-btn" onclick="showPage('aiassist', document.querySelector('[data-page=aiassist]'))">
+        <span>🤖</span><span>AI Help</span>
+      </button>
+      <button class="quick-btn" onclick="showPage('disease', document.querySelector('[data-page=disease]'))">
+        <span>🔬</span><span>Scan Disease</span>
+      </button>
+    </div>
+
+    <!-- Low Stock Alert -->
+    <div id="low-stock-section" style="display:none">
+      <div class="sec-head">⚠️ Low Stock Alert</div>
+      <div id="low-stock-list"></div>
+    </div>
+
+    <!-- Recent Bills -->
+    <div class="sec-head">Recent Bills <span class="sec-link" onclick="showPage('orders', document.querySelector('[data-page=orders]'))">See All →</span></div>
+    <div id="recent-bills-list">
+      <div class="empty-state">कोई बिल नहीं। पहला बिल बनाएं! 🧾</div>
+    </div>
+
+    <!-- Udhar Summary -->
+    <div class="sec-head">Top Udhar Customers <span class="sec-link" onclick="showPage('ledger', document.querySelector('[data-page=ledger]'))">See All →</span></div>
+    <div id="dash-udhar-list">
+      <div class="empty-state">कोई उधार नहीं। 👍</div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       POS / NEW BILL
+  ══════════════════════════════════════════ -->
+  <div class="page" id="page-pos">
+    <div class="pos-layout">
+      <!-- Product Search -->
+      <div class="pos-left">
+        <div class="search-bar">
+          <input type="text" id="pos-search" placeholder="🔍 उत्पाद खोजें / Search product..." oninput="posSearch(this.value)">
+        </div>
+        <div class="pos-cat-pills" id="pos-cat-pills"></div>
+        <div class="pos-product-grid" id="pos-product-grid"></div>
+      </div>
+
+      <!-- Cart -->
+      <div class="pos-right">
+        <div class="cart-header">
+          <div class="cart-title">🧾 Bill / बिल</div>
+          <div class="cart-customer">
+            <input type="text" id="cart-customer" placeholder="Customer name (optional)">
+          </div>
+        </div>
+        <div class="cart-items" id="cart-items">
+          <div class="empty-cart">Cart is empty<br>उत्पाद जोड़ें</div>
+        </div>
+        <div class="cart-footer">
+          <div class="cart-row"><span>Subtotal</span><span id="cart-subtotal">₹0</span></div>
+          <div class="cart-row discount-row">
+            <span>Discount</span>
+            <div class="discount-input-wrap">
+              <input type="number" id="cart-discount" value="0" min="0" oninput="calcCart()"> %
+            </div>
+          </div>
+          <div class="cart-row total-row"><span>TOTAL</span><span id="cart-total">₹0</span></div>
+          <div class="cart-row profit-row"><span>Profit</span><span id="cart-profit" class="green-text">₹0</span></div>
+          <div class="pay-btns">
+            <button class="pay-btn cash" onclick="finalizeBill('cash')">💵 Cash</button>
+            <button class="pay-btn udhar" onclick="finalizeBill('udhar')">📒 Udhar</button>
+            <button class="pay-btn upi" onclick="finalizeBill('upi')">📱 UPI</button>
+          </div>
+          <button class="clear-cart-btn" onclick="clearCart()">🗑️ Clear Cart</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       ORDERS
+  ══════════════════════════════════════════ -->
+  <div class="page" id="page-orders">
+    <div class="filter-bar">
+      <input type="text" id="order-search" placeholder="🔍 Search bills..." oninput="renderOrders()">
+      <select id="order-filter" onchange="renderOrders()">
+        <option value="all">All</option>
+        <option value="today">Today</option>
+        <option value="week">This Week</option>
+        <option value="month">This Month</option>
+      </select>
+      <select id="pay-filter" onchange="renderOrders()">
+        <option value="all">All Payment</option>
+        <option value="cash">Cash</option>
+        <option value="udhar">Udhar</option>
+        <option value="upi">UPI</option>
+      </select>
+    </div>
+    <div class="orders-summary" id="orders-summary"></div>
+    <div id="orders-list"></div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       PRODUCTS
+  ══════════════════════════════════════════ -->
+  <div class="page" id="page-products">
+    <div class="filter-bar">
+      <input type="text" id="prod-search" placeholder="🔍 Search products..." oninput="renderProducts()">
+      <select id="prod-cat" onchange="renderProducts()">
+        <option value="all">All Categories</option>
+      </select>
+      <button class="btn-primary small" onclick="openAddProduct()">➕ Add Product</button>
+    </div>
+    <div id="products-list"></div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       STOCK
+  ══════════════════════════════════════════ -->
+  <div class="page" id="page-stock">
+    <div class="stock-tabs">
+      <button class="stab active" onclick="stockTab('all',this)">All Stock</button>
+      <button class="stab" onclick="stockTab('low',this)">⚠️ Low Stock</button>
+      <button class="stab" onclick="stockTab('out',this)">❌ Out of Stock</button>
+    </div>
+    <div id="stock-list"></div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       RETURNS
+  ══════════════════════════════════════════ -->
+  <div class="page" id="page-returns">
+    <div class="card mb16">
+      <div class="card-title">New Return / नई वापसी</div>
+      <div class="form-group">
+        <label>Bill Number / बिल नंबर</label>
+        <input type="text" id="ret-bill" placeholder="e.g. BILL-001">
+      </div>
+      <div class="form-group">
+        <label>Customer Name</label>
+        <input type="text" id="ret-customer" placeholder="Customer name">
+      </div>
+      <div class="form-group">
+        <label>Product</label>
+        <select id="ret-product"></select>
+      </div>
+      <div class="form-group">
+        <label>Quantity Returned</label>
+        <input type="number" id="ret-qty" placeholder="0" min="1">
+      </div>
+      <div class="form-group">
+        <label>Reason</label>
+        <select id="ret-reason">
+          <option>Damaged / खराब</option>
+          <option>Wrong product / गलत उत्पाद</option>
+          <option>Customer changed mind</option>
+          <option>Expired / एक्सपायर्ड</option>
+          <option>Other</option>
+        </select>
+      </div>
+      <button class="btn-primary" onclick="processReturn()">Process Return</button>
+    </div>
+    <div class="sec-head">Return History</div>
+    <div id="returns-list"></div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       LEDGER / UDHAR
+  ══════════════════════════════════════════ -->
+  <div class="page" id="page-ledger">
+    <div class="ledger-top">
+      <div class="ledger-summary">
+        <div class="ls-card">
+          <div class="ls-val red" id="total-udhar-amt">₹0</div>
+          <div class="ls-lbl">Total Pending</div>
+        </div>
+        <div class="ls-card">
+          <div class="ls-val" id="total-udhar-customers">0</div>
+          <div class="ls-lbl">Customers</div>
+        </div>
+      </div>
+      <button class="btn-primary small" onclick="openAddUdhar()">➕ Add Udhar</button>
+    </div>
+    <input type="text" class="search-input" id="ledger-search" placeholder="🔍 Search customer..." oninput="renderLedger()">
+    <div id="ledger-list"></div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       PROFIT & LOSS
+  ══════════════════════════════════════════ -->
+  <div class="page" id="page-profitloss">
+    <div class="pl-period-tabs">
+      <button class="ptab active" onclick="plPeriod('today',this)">Today</button>
+      <button class="ptab" onclick="plPeriod('week',this)">Week</button>
+      <button class="ptab" onclick="plPeriod('month',this)">Month</button>
+      <button class="ptab" onclick="plPeriod('all',this)">All Time</button>
+    </div>
+
+    <div class="pl-big-card">
+      <div class="pl-metric">
+        <div class="pl-metric-val green" id="pl-revenue">₹0</div>
+        <div class="pl-metric-lbl">Revenue / आय</div>
+      </div>
+      <div class="pl-minus">−</div>
+      <div class="pl-metric">
+        <div class="pl-metric-val red" id="pl-cost">₹0</div>
+        <div class="pl-metric-lbl">Cost / लागत</div>
+      </div>
+      <div class="pl-equals">=</div>
+      <div class="pl-metric big">
+        <div class="pl-metric-val" id="pl-profit">₹0</div>
+        <div class="pl-metric-lbl">Net Profit / शुद्ध लाभ</div>
+      </div>
+    </div>
+
+    <div class="pl-stats-grid">
+      <div class="pl-stat"><div class="pl-stat-val" id="pl-margin">0%</div><div class="pl-stat-lbl">Profit Margin</div></div>
+      <div class="pl-stat"><div class="pl-stat-val" id="pl-bills">0</div><div class="pl-stat-lbl">Total Bills</div></div>
+      <div class="pl-stat"><div class="pl-stat-val" id="pl-avg">₹0</div><div class="pl-stat-lbl">Avg Bill Value</div></div>
+      <div class="pl-stat"><div class="pl-stat-val" id="pl-returns-loss">₹0</div><div class="pl-stat-lbl">Returns Loss</div></div>
+    </div>
+
+    <div class="sec-head">Top Selling Products</div>
+    <div id="pl-top-products"></div>
+
+    <!-- Quick Calculator -->
+    <div class="sec-head">Quick Profit Calculator</div>
+    <div class="card">
+      <div class="calc-row">
+        <div class="form-group">
+          <label>Buying Price (₹)</label>
+          <input type="number" id="calc-buy" placeholder="0" oninput="calcProfit()">
+        </div>
+        <div class="form-group">
+          <label>Selling Price (₹)</label>
+          <input type="number" id="calc-sell" placeholder="0" oninput="calcProfit()">
+        </div>
+        <div class="form-group">
+          <label>Quantity</label>
+          <input type="number" id="calc-qty" placeholder="1" value="1" oninput="calcProfit()">
+        </div>
+      </div>
+      <div class="calc-result" id="calc-result">
+        <span>Profit: <strong id="cr-profit">₹0</strong></span>
+        <span>Margin: <strong id="cr-margin">0%</strong></span>
+        <span>Total: <strong id="cr-total">₹0</strong></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       REPORTS
+  ══════════════════════════════════════════ -->
+  <div class="page" id="page-reports">
+    <div class="report-period">
+      <input type="date" id="rep-from" onchange="renderReports()">
+      <span>to</span>
+      <input type="date" id="rep-to" onchange="renderReports()">
+    </div>
+    <div id="reports-content"></div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       AI ASSISTANT
+  ══════════════════════════════════════════ -->
+  <div class="page" id="page-aiassist">
+    <div class="ai-intro">
+      <div class="ai-intro-icon">🤖</div>
+      <div class="ai-intro-title">AI Krishi Assistant</div>
+      <div class="ai-intro-sub">बीज, खाद, कीटनाशक की जानकारी पूछें<br>Ask about seeds, fertilizers, pesticides</div>
+    </div>
+
+    <div class="ai-quick-btns">
+      <button class="ai-qbtn" onclick="aiQuick('बीज की जानकारी')">🌱 Seed Info</button>
+      <button class="ai-qbtn" onclick="aiQuick('खाद की मात्रा')">💊 Fertilizer Dose</button>
+      <button class="ai-qbtn" onclick="aiQuick('कीटनाशक कैसे use करें')">🧪 Pesticide Use</button>
+      <button class="ai-qbtn" onclick="aiQuick('फसल में रोग')">🌿 Crop Disease</button>
+      <button class="ai-qbtn" onclick="aiQuick('प्रति एकड़ मात्रा')">📐 Per Acre Dose</button>
+      <button class="ai-qbtn" onclick="aiQuick('पानी में मिलाने की मात्रा')">💧 Water Ratio</button>
+    </div>
+
+    <div class="ai-chat" id="ai-chat">
+      <div class="ai-msg bot">
+        <div class="ai-avatar">🌿</div>
+        <div class="ai-bubble">
+          नमस्ते! मैं आपका AI Krishi सहायक हूँ। 🙏<br><br>
+          मुझसे पूछें:<br>
+          • किसी भी बीज/खाद/कीटनाशक की जानकारी<br>
+          • प्रति एकड़ मात्रा और पानी का अनुपात<br>
+          • कब और कैसे उपयोग करें<br>
+          • फसल रोगों का इलाज<br><br>
+          <em>Ask me anything about agricultural products!</em>
+        </div>
+      </div>
+    </div>
+
+    <div class="ai-input-bar">
+      <input type="text" id="ai-input" placeholder="यहाँ पूछें... / Ask here..." onkeydown="if(event.key==='Enter')sendAI()">
+      <button class="ai-send" onclick="sendAI()">➤</button>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       DISEASE SCANNER
+  ══════════════════════════════════════════ -->
+  <div class="page" id="page-disease">
+    <div class="disease-intro">
+      <div class="disease-icon">🔬</div>
+      <div class="disease-title">Crop Disease Scanner</div>
+      <div class="disease-sub">फसल की फोटो लें और तुरंत इलाज जानें<br>Take a crop photo for instant diagnosis</div>
+    </div>
+
+    <div class="upload-area" id="upload-area" onclick="document.getElementById('disease-img').click()">
+      <div class="upload-icon">📸</div>
+      <div class="upload-text">फोटो लें या अपलोड करें<br><small>Take photo or upload image</small></div>
+      <input type="file" id="disease-img" accept="image/*" capture="environment" onchange="scanDisease(this)" style="display:none">
+    </div>
+
+    <div id="disease-preview" style="display:none">
+      <img id="disease-img-preview" alt="Crop image">
+      <button class="btn-secondary" onclick="clearDiseaseScan()">Clear / बदलें</button>
+    </div>
+
+    <div id="disease-result" style="display:none">
+      <div class="disease-result-card">
+        <div class="dr-loading" id="dr-loading">
+          <div class="spinner"></div>
+          <div>AI analyzing... / विश्लेषण हो रहा है</div>
+        </div>
+        <div id="dr-content" style="display:none"></div>
+      </div>
+    </div>
+
+    <!-- Recent scans -->
+    <div class="sec-head" id="disease-history-head" style="display:none">Recent Scans</div>
+    <div id="disease-history"></div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       SETTINGS
+  ══════════════════════════════════════════ -->
+  <div class="page" id="page-settings">
+    <div class="card mb16">
+      <div class="card-title">Shop Details / दुकान की जानकारी</div>
+      <div class="form-group">
+        <label>Shop Name</label>
+        <input type="text" id="set-shopname" placeholder="Gumasta Krishi Kendra">
+      </div>
+      <div class="form-group">
+        <label>Owner Name / मालिक का नाम</label>
+        <input type="text" id="set-owner" placeholder="Owner name">
+      </div>
+      <div class="form-group">
+        <label>Phone / फोन</label>
+        <input type="tel" id="set-phone" placeholder="Phone number">
+      </div>
+      <div class="form-group">
+        <label>Address / पता</label>
+        <textarea id="set-address" placeholder="Shop address" rows="2"></textarea>
+      </div>
+      <div class="form-group">
+        <label>Low Stock Alert Level</label>
+        <input type="number" id="set-lowstock" placeholder="10" value="10">
+      </div>
+      <button class="btn-primary" onclick="saveSettings()">Save Settings</button>
+    </div>
+
+    <div class="card mb16">
+      <div class="card-title">Data Management</div>
+      <button class="btn-secondary" onclick="exportData()">📥 Export All Data (JSON)</button>
+      <button class="btn-secondary mt8" onclick="document.getElementById('import-file').click()">📤 Import Data</button>
+      <input type="file" id="import-file" accept=".json" onchange="importData(this)" style="display:none">
+      <button class="btn-danger mt8" onclick="clearAllData()">🗑️ Clear All Data</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title">About</div>
+      <div class="about-info">
+        <div>🌿 GKK — Gumasta Krishi Kendra</div>
+        <div>Version 2.0 | PWA App</div>
+        <div style="margin-top:8px;font-size:12px;color:var(--muted)">Powered by AI • Works Offline • No Database Needed</div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<!-- ══════════════════════════════════════════
+     MODALS
+══════════════════════════════════════════ -->
+
+<!-- Add/Edit Product Modal -->
+<div class="modal" id="modal-product">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-product-title">Add Product</div>
+      <button class="modal-close" onclick="closeModal('modal-product')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="prod-id">
+      <div class="form-group">
+        <label>Product Name / उत्पाद का नाम *</label>
+        <input type="text" id="prod-name" placeholder="e.g. Urea, DAP, Wheat seeds">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Category / श्रेणी</label>
+          <select id="prod-category">
+            <option>🌱 Seeds / बीज</option>
+            <option>💊 Fertilizer / खाद</option>
+            <option>🧪 Pesticide / कीटनाशक</option>
+            <option>🌿 Herbicide / खरपतवार</option>
+            <option>🔧 Tools / उपकरण</option>
+            <option>💧 Irrigation / सिंचाई</option>
+            <option>🌾 Other / अन्य</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Unit / इकाई</label>
+          <select id="prod-unit">
+            <option>kg</option>
+            <option>g</option>
+            <option>L</option>
+            <option>ml</option>
+            <option>packet</option>
+            <option>bag</option>
+            <option>bottle</option>
+            <option>piece</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Buy Price (₹) / खरीद मूल्य *</label>
+          <input type="number" id="prod-buy" placeholder="0" oninput="updateMarginPreview()">
+        </div>
+        <div class="form-group">
+          <label>Sell Price (₹) / बिक्री मूल्य *</label>
+          <input type="number" id="prod-sell" placeholder="0" oninput="updateMarginPreview()">
+        </div>
+      </div>
+      <div class="margin-preview" id="margin-preview">Margin: 0%</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Stock Qty / स्टॉक मात्रा</label>
+          <input type="number" id="prod-stock" placeholder="0">
+        </div>
+        <div class="form-group">
+          <label>Company / कंपनी</label>
+          <input type="text" id="prod-company" placeholder="Brand name">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Notes / नोट्स</label>
+        <textarea id="prod-notes" placeholder="Any additional info..." rows="2"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-primary" onclick="saveProduct()">Save Product</button>
+      <button class="btn-ghost" onclick="closeModal('modal-product')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Udhar Modal -->
+<div class="modal" id="modal-udhar">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-title">Add Udhar / उधार जोड़ें</div>
+      <button class="modal-close" onclick="closeModal('modal-udhar')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Customer Name *</label>
+        <input type="text" id="udhar-name" placeholder="Customer name">
+      </div>
+      <div class="form-group">
+        <label>Phone</label>
+        <input type="tel" id="udhar-phone" placeholder="Phone number">
+      </div>
+      <div class="form-group">
+        <label>Amount (₹) *</label>
+        <input type="number" id="udhar-amt" placeholder="0">
+      </div>
+      <div class="form-group">
+        <label>Notes</label>
+        <input type="text" id="udhar-note" placeholder="What for?">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-primary" onclick="saveUdhar()">Add Udhar</button>
+      <button class="btn-ghost" onclick="closeModal('modal-udhar')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Bill Detail Modal -->
+<div class="modal" id="modal-bill">
+  <div class="modal-box large">
+    <div class="modal-header">
+      <div class="modal-title">Bill Detail</div>
+      <button class="modal-close" onclick="closeModal('modal-bill')">✕</button>
+    </div>
+    <div class="modal-body" id="bill-detail-content"></div>
+    <div class="modal-footer">
+      <button class="btn-primary" onclick="printBill()">🖨️ Print / Share</button>
+      <button class="btn-ghost" onclick="closeModal('modal-bill')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
