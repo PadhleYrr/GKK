@@ -1082,6 +1082,29 @@ tr:hover td { background: var(--bg3); }
 }
 .chat-input:focus { border-color: var(--primary); }
 
+/* Mobile AI tabs */
+.ai-tab-bar {
+  display: none;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 12px;
+  gap: 8px;
+}
+.ai-tab-btn {
+  flex: 1;
+  padding: 9px 10px;
+  border-radius: 8px;
+  border: 1.5px solid var(--border2);
+  background: var(--bg3);
+  color: var(--text2);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--font);
+  transition: all 0.2s;
+}
+.ai-tab-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+
 .ai-quick-btns {
   background: var(--bg2);
   border: 1px solid var(--border);
@@ -1184,7 +1207,11 @@ tr:hover td { background: var(--bg3); }
   .grid-4 { grid-template-columns: repeat(2, 1fr); }
   .profit-summary { grid-template-columns: repeat(2, 1fr); }
   #page-billing .billing-layout { grid-template-columns: 1fr; }
-  .ai-layout { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+  .ai-layout { grid-template-columns: 1fr; height: auto; }
+  .ai-layout > div:last-child { display: none; }
+  .ai-layout > div:last-child.ai-panel-visible { display: flex; flex-direction: column; gap: 16px; }
+  .ai-tab-bar { display: flex; }
+  .chat-window { height: calc(100vh - 200px); min-height: 400px; }
   .grid-12 { grid-template-columns: 1fr; }
 }
 
@@ -1690,6 +1717,11 @@ tr:hover td { background: var(--bg3); }
 
   <!-- AI ASSISTANT -->
   <div class="page-content" id="page-ai">
+    <!-- Mobile tab bar (hidden on desktop) -->
+    <div class="ai-tab-bar" id="ai-tab-bar">
+      <button class="ai-tab-btn active" id="ai-tab-chat" onclick="switchAITab('chat')">💬 Chat</button>
+      <button class="ai-tab-btn" id="ai-tab-quick" onclick="switchAITab('quick')">⚡ Quick Help</button>
+    </div>
     <div class="ai-layout">
       <div class="chat-window">
         <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
@@ -2220,6 +2252,20 @@ function navTo(page, el) {
 }
 
 // ==================== SIDEBAR MOBILE ====================
+function switchAITab(tab) {
+  const chatPanel = document.querySelector('#page-ai .chat-window');
+  const rightPanel = document.querySelector('#page-ai .ai-layout > div:last-child');
+  document.getElementById('ai-tab-chat').classList.toggle('active', tab === 'chat');
+  document.getElementById('ai-tab-quick').classList.toggle('active', tab === 'quick');
+  if (tab === 'chat') {
+    chatPanel.style.display = 'flex';
+    rightPanel.classList.remove('ai-panel-visible');
+  } else {
+    chatPanel.style.display = 'none';
+    rightPanel.classList.add('ai-panel-visible');
+  }
+}
+
 function toggleSidebar() {
   document.getElementById('sidebar').classList.toggle('open');
   document.getElementById('sidebar-overlay').classList.toggle('open');
@@ -2349,6 +2395,8 @@ function saveProduct() {
   closeModal('add-product-modal');
   ['p-name','p-buy','p-sell','p-stock','p-company','p-notes','p-itemcode','p-barcode'].forEach(id => { const el = document.getElementById(id); if(el) el.value=''; });
   document.getElementById('ai-lookup-result').style.display = 'none';
+  document.getElementById('p-image-wrap').style.display = 'none';
+  document.getElementById('p-image-preview').src = '';
   renderProducts(); renderStock(); renderBillProducts(); refreshDashboard();
   showToast('Product added!');
 }
@@ -2363,7 +2411,6 @@ async function startBarcodeScanner() {
     barcodeStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
     document.getElementById('barcode-video').srcObject = barcodeStream;
     showToast('📷 Camera started — point at barcode', 'ℹ️');
-    // Use BarcodeDetector if available
     if ('BarcodeDetector' in window) {
       const detector = new BarcodeDetector({ formats: ['ean_13','ean_8','code_128','qr_code','upc_a','upc_e'] });
       const video = document.getElementById('barcode-video');
@@ -2377,7 +2424,8 @@ async function startBarcodeScanner() {
             const code = barcodes[0].rawValue;
             document.getElementById('p-barcode').value = code;
             document.getElementById('p-itemcode').value = code;
-            showToast('✅ Barcode scanned: ' + code + ' — Fill details & save, or tap 🔍 AI Lookup');
+            showToast('✅ Barcode scanned! Fetching product info...', 'ℹ️');
+            gtinLookup(code);
           }
         } catch(e) {}
       }, 500);
@@ -2390,6 +2438,84 @@ async function startBarcodeScanner() {
   }
 }
 
+// ==================== FREE GTIN/UPC/EAN DATABASE LOOKUP ====================
+async function gtinLookup(barcode) {
+  const resultDiv = document.getElementById('ai-lookup-result');
+  resultDiv.style.display = 'block';
+  resultDiv.innerHTML = '🔍 Fetching product from global database...';
+
+  try {
+    // Try Open Food Facts (free, no key needed, works for EAN/UPC)
+    const resp = await fetch(`https://world.openfoodfacts.org/api/v0/product/${barcode}.json`);
+    const data = await resp.json();
+
+    if (data.status === 1 && data.product) {
+      const p = data.product;
+      const name = p.product_name || p.product_name_en || '';
+      const brand = p.brands || '';
+      const imgUrl = p.image_front_url || p.image_url || '';
+
+      if (name) {
+        document.getElementById('p-name').value = name;
+        if (brand) document.getElementById('p-company').value = brand;
+
+        // Show product image
+        if (imgUrl) {
+          const imgWrap = document.getElementById('p-image-wrap');
+          const imgEl = document.getElementById('p-image-preview');
+          imgWrap.style.display = 'block';
+          imgEl.src = imgUrl;
+          imgEl.onerror = () => { imgWrap.style.display = 'none'; };
+        }
+
+        resultDiv.innerHTML = `
+          <strong style="color:var(--success)">✅ Found: ${name}</strong><br>
+          <span style="color:var(--text2)">${brand ? brand + ' •' : ''} Barcode: ${barcode}</span><br>
+          <span style="font-size:11px;color:var(--primary)">✏️ Fill Category, Buy/Sell price & Stock to save</span>`;
+        document.getElementById('p-buy').focus();
+        return;
+      }
+    }
+
+    // If not found in Open Food Facts, try UPC Item DB (for agricultural/non-food products)
+    const resp2 = await fetch(`https://api.upcitemdb.com/prod/trial/lookup?upc=${barcode}`);
+    const data2 = await resp2.json();
+
+    if (data2.code === 'OK' && data2.items && data2.items.length > 0) {
+      const item = data2.items[0];
+      const name = item.title || '';
+      const brand = item.brand || '';
+      const imgUrl = (item.images && item.images[0]) ? item.images[0] : '';
+
+      document.getElementById('p-name').value = name;
+      if (brand) document.getElementById('p-company').value = brand;
+
+      if (imgUrl) {
+        const imgWrap = document.getElementById('p-image-wrap');
+        const imgEl = document.getElementById('p-image-preview');
+        imgWrap.style.display = 'block';
+        imgEl.src = imgUrl;
+        imgEl.onerror = () => { imgWrap.style.display = 'none'; };
+      }
+
+      resultDiv.innerHTML = `
+        <strong style="color:var(--success)">✅ Found: ${name}</strong><br>
+        <span style="color:var(--text2)">${brand ? brand + ' •' : ''} Barcode: ${barcode}</span><br>
+        <span style="font-size:11px;color:var(--primary)">✏️ Fill Category, Buy/Sell price & Stock to save</span>`;
+      document.getElementById('p-buy').focus();
+      return;
+    }
+
+    // Nothing found in free databases — barcode filled, let user type name
+    resultDiv.innerHTML = `
+      <span style="color:var(--warning)">⚠️ Barcode ${barcode} not found in global database.</span><br>
+      <span style="font-size:11px;color:var(--text2)">This may be a local/regional product. Type name below & press 🤖 AI to auto-fill details, or fill manually.</span>`;
+
+  } catch(e) {
+    resultDiv.innerHTML = `<span style="color:var(--text2)">⚠️ Could not connect to product database. Type name & use 🤖 AI Lookup, or fill manually.</span>`;
+  }
+}
+
 function stopBarcodeScanner() {
   if (barcodeStream) { barcodeStream.getTracks().forEach(t => t.stop()); barcodeStream = null; }
   const wrap = document.getElementById('barcode-scanner-wrap');
@@ -2397,57 +2523,101 @@ function stopBarcodeScanner() {
 }
 
 async function aiLookupProduct() {
-  const query = document.getElementById('p-barcode').value.trim();
+  const query = document.getElementById('p-barcode').value.trim() || document.getElementById('p-name').value.trim();
   if (!query) { showToast('Enter product name or barcode first', '⚠️'); return; }
-  const key = db.settings.geminiKey;
-  if (!key) { showToast('Add Gemini API key in Settings for AI lookup', '⚠️'); return; }
+
+  const groqKey = db.settings.groqKey;
+  const geminiKey = db.settings.geminiKey;
+  if (!groqKey && !geminiKey) {
+    showToast('Add Groq or Gemini API key in Settings first', '⚠️');
+    return;
+  }
 
   const resultDiv = document.getElementById('ai-lookup-result');
   resultDiv.style.display = 'block';
   resultDiv.innerHTML = '🤖 Looking up product info...';
 
-  try {
-    const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: `You are an agricultural product database for India. For the product: "${query}"
+  const prompt = `You are an agricultural product database for India. For the product: "${query}"
 Respond ONLY in this exact JSON format (no markdown, no extra text):
 {
   "name": "exact product name",
-  "company": "manufacturer company",
+  "company": "manufacturer company name",
   "category": "one of: Seeds / बीज, Fertilizer / खाद, Pesticide / कीटनाशक, Herbicide / खरपतवार, Tools / उपकरण, Irrigation / सिंचाई, Other / अन्य",
   "unit": "one of: kg, g, L, ml, packet, bag, bottle, piece",
-  "formula": "active ingredients or chemical formula",
+  "formula": "active ingredients or chemical formula if applicable",
   "description": "brief description in 1-2 lines",
   "use": "main crops and pests it targets"
 }
-If unknown, fill with best guesses based on the name.` }] }],
-        generationConfig: { maxOutputTokens: 400 }
-      })
-    });
-    const data = await resp.json();
-    if (data.error) throw new Error(data.error.message);
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+If unknown, use best guesses based on the name. Always fill all fields.`;
+
+  try {
+    let text = '';
+
+    if (groqKey) {
+      const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + groqKey },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          max_tokens: 400,
+          messages: [{ role: 'user', content: prompt }]
+        })
+      });
+      const data = await resp.json();
+      if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+      text = data.choices?.[0]?.message?.content || '';
+    } else if (geminiKey) {
+      const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          generationConfig: { maxOutputTokens: 400 }
+        })
+      });
+      const data = await resp.json();
+      if (data.error) throw new Error(data.error.message);
+      text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    }
+
     const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('Could not parse response');
+    if (!jsonMatch) throw new Error('Could not parse AI response');
     const info = JSON.parse(jsonMatch[0]);
 
-    // Auto-fill the form
+    // Auto-fill all form fields
     if (info.name) document.getElementById('p-name').value = info.name;
     if (info.company) document.getElementById('p-company').value = info.company;
-    if (info.category) document.getElementById('p-cat').value = info.category;
-    if (info.unit) document.getElementById('p-unit').value = info.unit;
-    if (info.formula || info.description) document.getElementById('p-notes').value = (info.formula ? info.formula + ' | ' : '') + (info.description || '');
+    if (info.category) {
+      const sel = document.getElementById('p-cat');
+      for (let o of sel.options) { if (o.value.includes(info.category.split('/')[0].trim()) || info.category.includes(o.value.split('/')[0].trim())) { sel.value = o.value; break; } }
+    }
+    if (info.unit) {
+      const sel = document.getElementById('p-unit');
+      for (let o of sel.options) { if (o.value === info.unit) { sel.value = o.value; break; } }
+    }
+    if (info.formula || info.description) {
+      document.getElementById('p-notes').value = (info.formula ? info.formula + ' | ' : '') + (info.description || '');
+    }
 
-    resultDiv.innerHTML = `<strong style="color:var(--success)">✅ Found: ${info.name}</strong><br>
+    // Show product image from Google Images
+    const productName = info.name || query;
+    const imgWrap = document.getElementById('p-image-wrap');
+    const imgEl = document.getElementById('p-image-preview');
+    const imgUrl = `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(productName + ' agricultural product India')}&tbs=itp:photo`;
+    imgWrap.style.display = 'block';
+    imgEl.src = `https://via.placeholder.com/80x80/6c63ff/ffffff?text=${encodeURIComponent(productName.slice(0,4))}`;
+    imgEl.alt = productName;
+
+    resultDiv.innerHTML = `
+      <strong style="color:var(--success)">✅ Found: ${info.name}</strong><br>
       <span style="color:var(--text2)">${info.company || ''} ${info.category ? '• ' + info.category : ''}</span><br>
       ${info.formula ? '<span style="font-size:11px">🧪 ' + info.formula + '</span><br>' : ''}
       ${info.use ? '<span style="font-size:11px">🌾 ' + info.use + '</span><br>' : ''}
       <span style="font-size:11px;color:var(--primary)">✏️ Fill Buy/Sell price & Stock to save</span>`;
-    document.getElementById('p-sell').focus();
+    document.getElementById('p-buy').focus();
+
   } catch(e) {
-    resultDiv.innerHTML = `<span style="color:var(--danger)">❌ Lookup failed: ${e.message}. Fill manually.</span>`;
+    resultDiv.innerHTML = `<span style="color:var(--danger)">❌ Lookup failed: ${e.message}</span><br><span style="font-size:11px;color:var(--text2)">Fill manually ↓</span>`;
   }
 }
 
