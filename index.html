@@ -163,13 +163,15 @@ body {
   min-height: 100vh;
   display: flex;
   overflow-x: hidden;
+  overflow-y: auto;
   transition: background 0.3s, color 0.3s;
 }
 
 /* ==================== SIDEBAR ==================== */
 .sidebar {
   width: 240px;
-  min-height: 100vh;
+  height: 100%;
+  height: 100dvh;
   background: var(--sidebar);
   display: flex;
   flex-direction: column;
@@ -179,6 +181,8 @@ body {
   transition: width 0.3s, transform 0.3s;
   overflow-y: auto;
   overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 
 .sidebar::-webkit-scrollbar { width: 4px; }
@@ -296,6 +300,7 @@ body {
   display: flex;
   flex-direction: column;
   overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .topbar {
@@ -1164,7 +1169,15 @@ tr:hover td { background: var(--bg3); }
 
 /* ==================== RESPONSIVE ==================== */
 @media (max-width: 900px) {
-  .sidebar { transform: translateX(-100%); }
+  .sidebar {
+    transform: translateX(-100%);
+    height: 100vh;
+    height: 100dvh;
+    max-height: 100vh;
+    max-height: 100dvh;
+    overflow-y: scroll;
+    -webkit-overflow-scrolling: touch;
+  }
   .sidebar.open { transform: translateX(0); }
   .main { margin-left: 0; }
   .mobile-menu-btn { display: flex; }
@@ -1239,7 +1252,7 @@ tr:hover td { background: var(--bg3); }
     <div class="nav-item" onclick="navTo('disease', this)"><span class="nav-icon">🔬</span> Disease Scanner <span class="nav-new">AI</span></div>
   </div>
 
-  <div class="sidebar-section">
+  <div class="sidebar-section" style="padding-bottom: 24px;">
     <div class="nav-item" onclick="navTo('settings', this)"><span class="nav-icon">⚙️</span> Settings</div>
   </div>
 </aside>
@@ -1805,29 +1818,11 @@ tr:hover td { background: var(--bg3); }
       <div class="settings-section-title">🤖 AI Configuration</div>
       <div class="settings-card">
 
-        <!-- Anthropic -->
-        <div class="settings-row">
-          <div>
-            <div class="settings-row-label">Anthropic API Key <span class="badge badge-warning" style="font-size:10px;margin-left:4px">Paid</span></div>
-            <div class="settings-row-desc">For Disease Scanner (image analysis). Get at <strong>console.anthropic.com</strong></div>
-          </div>
-          <div class="api-key-wrapper">
-            <input class="api-key-input" id="api-key-input" type="password" placeholder="sk-ant-...">
-            <button class="api-key-toggle" onclick="toggleKeyVis('api-key-input',this)">👁</button>
-          </div>
-        </div>
-        <div class="settings-row" style="padding-top:0;border-top:none">
-          <div></div>
-          <button class="btn btn-sm btn-primary" onclick="saveApiKey('anthropic')">Save</button>
-        </div>
-
-        <div style="height:1px;background:var(--border);margin:4px 0"></div>
-
         <!-- Gemini -->
         <div class="settings-row">
           <div>
             <div class="settings-row-label">Google Gemini API Key <span class="badge badge-success" style="font-size:10px;margin-left:4px">Free</span></div>
-            <div class="settings-row-desc">For AI Chat (free tier). Get at <strong>aistudio.google.com</strong></div>
+            <div class="settings-row-desc">For AI Chat & Disease Scanner. Get at <strong>aistudio.google.com</strong></div>
           </div>
           <div class="api-key-wrapper">
             <input class="api-key-input" id="gemini-key-input" type="password" placeholder="AIza...">
@@ -2150,7 +2145,7 @@ let db = {
   chatHistory: [],
   settings: {
     shopName: 'GKK', ownerName: '', phone: '', address: '',
-    lowStockLevel: 5, apiKey: '', geminiKey: '', groqKey: '', theme: 'slate'
+    lowStockLevel: 5, geminiKey: '', groqKey: '', theme: 'slate'
   }
 };
 let cart = [];
@@ -2169,7 +2164,6 @@ function loadData() {
     try { db = { ...db, ...JSON.parse(saved) }; } catch(e) {}
   }
   applyTheme(db.settings.theme || 'slate', null, true);
-  if (db.settings.apiKey) document.getElementById('api-key-input').value = db.settings.apiKey;
   if (db.settings.geminiKey) document.getElementById('gemini-key-input').value = db.settings.geminiKey;
   if (db.settings.groqKey) document.getElementById('groq-key-input').value = db.settings.groqKey;
   if (db.settings.shopName) document.getElementById('set-shop-name').value = db.settings.shopName;
@@ -2383,8 +2377,7 @@ async function startBarcodeScanner() {
             const code = barcodes[0].rawValue;
             document.getElementById('p-barcode').value = code;
             document.getElementById('p-itemcode').value = code;
-            showToast('✅ Barcode scanned: ' + code);
-            aiLookupProduct();
+            showToast('✅ Barcode scanned: ' + code + ' — Fill details & save, or tap 🔍 AI Lookup');
           }
         } catch(e) {}
       }, 500);
@@ -3365,9 +3358,9 @@ function setAIProvider(p) {
   const icons = { gemini: '✨', groq: '⚡' };
   const names = { gemini: 'AI Krishi Assistant (Gemini)', groq: 'AI Krishi Assistant (Groq)' };
   const notes = { gemini: 'Gemini Flash (Free)', groq: 'Groq LLaMA (Free)' };
-  document.getElementById('ai-provider-icon').textContent = icons[p];
-  document.getElementById('ai-provider-name').textContent = names[p];
-  document.getElementById('ai-provider-note').textContent = notes[p];
+  document.getElementById('ai-provider-icon').textContent = icons[p] || '✨';
+  document.getElementById('ai-provider-name').textContent = names[p] || 'AI Krishi Assistant';
+  document.getElementById('ai-provider-note').textContent = notes[p] || '';
   showToast('Switched to ' + (p === 'gemini' ? '✨ Gemini' : '⚡ Groq'));
 }
 
@@ -3418,7 +3411,6 @@ async function sendChat() {
       if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
       replyText = data.choices?.[0]?.message?.content || 'No response received.';
     }
-
     typingEl.remove();
     addChatMsg(replyText, 'ai');
     saveChatToHistory(msg, replyText);
@@ -3542,11 +3534,7 @@ function saveSettings() {
 }
 
 function saveApiKey(provider) {
-  if (provider === 'anthropic') {
-    const key = document.getElementById('api-key-input').value.trim();
-    db.settings.apiKey = key;
-    saveData(); showToast(key ? '🔑 Anthropic key saved!' : 'Anthropic key cleared');
-  } else if (provider === 'gemini') {
+  if (provider === 'gemini') {
     const key = document.getElementById('gemini-key-input').value.trim();
     db.settings.geminiKey = key;
     saveData(); showToast(key ? '✨ Gemini key saved!' : 'Gemini key cleared');
@@ -3560,10 +3548,6 @@ function saveApiKey(provider) {
 function toggleKeyVis(inputId, btn) {
   const inp = document.getElementById(inputId);
   inp.type = inp.type === 'password' ? 'text' : 'password';
-}
-
-function toggleApiKeyVisibility() {
-  toggleKeyVis('api-key-input', null);
 }
 
 function exportData() {
