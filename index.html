@@ -9,6 +9,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Playfair+Display:wght@600;700&family=JetBrains+Mono:wght@400;500&family=Outfit:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Syne:wght@600;700;800&family=Nunito:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
 <style>
 /* ==================== THEME SYSTEM ==================== */
@@ -481,6 +483,28 @@ th { padding: 10px 14px; font-size: 11px; font-weight: 700; color: var(--text3);
 td { padding: 12px 14px; font-size: 13.5px; color: var(--text); border-bottom: 1px solid var(--border); }
 tr:last-child td { border-bottom: none; }
 tr:hover td { background: var(--bg3); }
+
+/* Table scroll wrapper for mobile */
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+/* Mobile order cards (shown instead of table on phones) */
+.order-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.order-card:last-child { border-bottom: none; }
+.order-card-left { flex: 1; min-width: 0; }
+.order-card-id { font-family: var(--font-mono); font-weight: 700; font-size: 13px; }
+.order-card-customer { font-size: 13px; font-weight: 500; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.order-card-meta { font-size: 11px; color: var(--text3); margin-top: 2px; }
+.order-card-right { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex-shrink: 0; }
+.order-card-total { font-family: var(--font-mono); font-size: 15px; font-weight: 700; }
+.order-card-actions { display: flex; gap: 6px; align-items: center; }
 
 /* ==================== MODAL ==================== */
 .modal-overlay {
@@ -982,6 +1006,10 @@ tr:hover td { background: var(--bg3); }
   margin-bottom: 20px;
 }
 
+@media (max-width: 600px) {
+  .profit-summary { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+}
+
 .calc-card {
   background: var(--bg2);
   border: 1px solid var(--border);
@@ -1072,6 +1100,37 @@ tr:hover td { background: var(--bg3); }
   transition: all 0.2s;
 }
 .ai-quick-btn:hover { background: var(--primary-light); color: var(--primary); border-color: var(--primary); }
+
+/* ==================== AI PROVIDER TOGGLE ==================== */
+.ai-provider-toggle {
+  display: flex;
+  background: var(--bg3);
+  border: 1.5px solid var(--border2);
+  border-radius: 10px;
+  padding: 3px;
+  gap: 3px;
+  flex-shrink: 0;
+}
+.ai-prov-btn {
+  display: flex; align-items: center; gap: 5px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--text2);
+  font-family: var(--font);
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.ai-prov-btn.active {
+  background: var(--bg2);
+  color: var(--primary);
+  box-shadow: 0 1px 6px rgba(0,0,0,0.12);
+}
+.ai-prov-btn:not(.active):hover { color: var(--text); background: rgba(255,255,255,0.5); }
 
 /* ==================== NOTIFICATIONS ==================== */
 .toast {
@@ -1207,7 +1266,6 @@ tr:hover td { background: var(--bg3); }
         <div class="greeting-text" id="greeting-text">नमस्ते! 🙏</div>
         <div class="greeting-sub" id="greeting-date"></div>
       </div>
-      <button class="btn btn-outline" style="color:white;border-color:rgba(255,255,255,0.4)" onclick="navTo('billing',null)">+ New Bill</button>
     </div>
 
     <div class="grid-4" style="margin-bottom:20px">
@@ -1301,7 +1359,7 @@ tr:hover td { background: var(--bg3); }
     <div class="billing-layout">
       <!-- Left: Product List -->
       <div>
-        <div class="product-search-bar">
+        <div class="product-search-bar" style="flex-wrap:wrap">
           <input class="form-input" id="bill-search" placeholder="🔍 Search products / उत्पाद खोजें..." oninput="renderBillProducts()">
           <select class="form-select" style="width:140px" id="bill-cat-filter" onchange="renderBillProducts()">
             <option value="">All Categories</option>
@@ -1414,14 +1472,14 @@ tr:hover td { background: var(--bg3); }
 
   <!-- ORDERS -->
   <div class="page-content" id="page-orders">
-    <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
-      <div class="pill-tabs">
+    <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;overflow-x:auto;padding-bottom:4px">
+      <div class="pill-tabs" style="flex-shrink:0">
         <button class="pill-tab active" onclick="filterOrders('all', this)">All</button>
         <button class="pill-tab" onclick="filterOrders('today', this)">Today</button>
-        <button class="pill-tab" onclick="filterOrders('week', this)">This Week</button>
-        <button class="pill-tab" onclick="filterOrders('month', this)">This Month</button>
+        <button class="pill-tab" onclick="filterOrders('week', this)">Week</button>
+        <button class="pill-tab" onclick="filterOrders('month', this)">Month</button>
       </div>
-      <div class="pill-tabs">
+      <div class="pill-tabs" style="flex-shrink:0">
         <button class="pill-tab active" onclick="filterOrdersPayment('all', this)">All</button>
         <button class="pill-tab" onclick="filterOrdersPayment('cash', this)">Cash</button>
         <button class="pill-tab" onclick="filterOrdersPayment('udhar', this)">Udhar</button>
@@ -1438,8 +1496,8 @@ tr:hover td { background: var(--bg3); }
   <!-- PRODUCTS -->
   <div class="page-content" id="page-products">
     <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
-      <input class="form-input" id="prod-search" placeholder="🔍 Search products..." oninput="renderProducts()" style="max-width:280px">
-      <select class="form-select" id="prod-cat" onchange="renderProducts()" style="max-width:180px">
+      <input class="form-input" id="prod-search" placeholder="🔍 Search products..." oninput="renderProducts()" style="flex:1;min-width:140px">
+      <select class="form-select" id="prod-cat" onchange="renderProducts()" style="flex:1;min-width:130px;max-width:180px">
         <option value="">All Categories</option>
         <option>Seeds / बीज</option>
         <option>Fertilizer / खाद</option>
@@ -1449,7 +1507,7 @@ tr:hover td { background: var(--bg3); }
         <option>Irrigation / सिंचाई</option>
         <option>Other / अन्य</option>
       </select>
-      <button class="btn btn-primary" style="margin-left:auto" onclick="openModal('add-product-modal')">➕ Add Product</button>
+      <button class="btn btn-primary" onclick="openModal('add-product-modal')">➕ Add</button>
     </div>
     <div class="product-grid" id="products-grid"></div>
   </div>
@@ -1462,10 +1520,12 @@ tr:hover td { background: var(--bg3); }
       <div class="stat-card"><div class="stat-icon" style="background:rgba(255,77,79,0.12)">❌</div><div class="stat-label">Out of Stock</div><div class="stat-value" id="stock-out">0</div></div>
     </div>
     <div class="card">
-      <table>
-        <thead><tr><th>Product</th><th>Category</th><th>Stock</th><th>Status</th><th>Action</th></tr></thead>
-        <tbody id="stock-table-body"></tbody>
-      </table>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Product</th><th>Stock</th><th>Status</th><th>Action</th></tr></thead>
+          <tbody id="stock-table-body"></tbody>
+        </table>
+      </div>
     </div>
   </div>
 
@@ -1504,7 +1564,7 @@ tr:hover td { background: var(--bg3); }
         </div>
         <button class="btn btn-primary btn-block" onclick="processReturn()">Process Return</button>
       </div>
-      <div class="card">
+        <div class="card">
         <div class="card-header"><span class="card-title">Return History</span></div>
         <div id="returns-list">
           <div class="empty-state"><div class="empty-state-icon">🔄</div><div class="empty-state-text">No returns yet</div></div>
@@ -1565,14 +1625,52 @@ tr:hover td { background: var(--bg3); }
 
   <!-- REPORTS -->
   <div class="page-content" id="page-reports">
-    <div class="card card-body" style="text-align:center;padding:40px">
-      <div style="font-size:40px;margin-bottom:12px">📈</div>
-      <div style="font-size:18px;font-weight:700;margin-bottom:8px">Reports</div>
-      <div style="color:var(--text2);font-size:14px;margin-bottom:20px">Export and analyze your business data</div>
-      <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
-        <button class="btn btn-primary" onclick="exportData()">📥 Export All Data (JSON)</button>
-        <button class="btn btn-outline" onclick="document.getElementById('import-file').click()">📤 Import Data</button>
+    <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;align-items:center">
+      <div class="pill-tabs" style="flex-shrink:0">
+        <button class="pill-tab active" onclick="setReportPeriod('week',this)">Week</button>
+        <button class="pill-tab" onclick="setReportPeriod('month',this)">Month</button>
+        <button class="pill-tab" onclick="setReportPeriod('all',this)">All Time</button>
+      </div>
+      <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-outline btn-sm" onclick="exportData()">📥 JSON</button>
+        <button class="btn btn-primary btn-sm" onclick="exportPDF()">📄 PDF Report</button>
+        <button class="btn btn-outline btn-sm" onclick="document.getElementById('import-file').click()">📤 Import</button>
         <input type="file" id="import-file" accept=".json" style="display:none" onchange="importData(this)">
+      </div>
+    </div>
+    <div class="grid-4" style="margin-bottom:20px">
+      <div class="stat-card"><div class="stat-icon">💰</div><div class="stat-label">Revenue</div><div class="stat-value" id="rep-revenue">₹0</div></div>
+      <div class="stat-card"><div class="stat-icon" style="background:rgba(67,184,156,0.15)">📈</div><div class="stat-label">Profit</div><div class="stat-value" id="rep-profit">₹0</div></div>
+      <div class="stat-card"><div class="stat-icon" style="background:rgba(246,201,14,0.15)">🧾</div><div class="stat-label">Bills</div><div class="stat-value" id="rep-bills">0</div></div>
+      <div class="stat-card"><div class="stat-icon" style="background:rgba(255,77,79,0.12)">📊</div><div class="stat-label">Margin</div><div class="stat-value" id="rep-margin">0%</div></div>
+    </div>
+    <div class="grid-2" style="margin-bottom:20px">
+      <div class="card">
+        <div class="card-header"><span class="card-title">🏆 Best Selling Products</span></div>
+        <div class="card-body" style="padding:16px">
+          <canvas id="chart-top-products" height="220"></canvas>
+          <div id="chart-top-products-empty" style="display:none" class="empty-state"><div class="empty-state-icon">📦</div><div class="empty-state-text">No sales data yet</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">🗂 Category-wise Sales</span></div>
+        <div class="card-body" style="padding:16px">
+          <canvas id="chart-category" height="220"></canvas>
+          <div id="chart-category-empty" style="display:none" class="empty-state"><div class="empty-state-icon">🗂</div><div class="empty-state-text">No sales data yet</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:20px">
+      <div class="card-header"><span class="card-title">📅 Daily Sales Trend</span></div>
+      <div class="card-body" style="padding:16px"><canvas id="chart-daily" height="120"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title">📋 Product-wise Breakdown</span></div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Product</th><th>Qty Sold</th><th>Revenue</th><th>Profit</th></tr></thead>
+          <tbody id="rep-product-table"></tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -1581,31 +1679,57 @@ tr:hover td { background: var(--bg3); }
   <div class="page-content" id="page-ai">
     <div class="ai-layout">
       <div class="chat-window">
-        <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px">
-          <span style="font-size:22px">🤖</span>
-          <div>
-            <div style="font-size:14px;font-weight:700">AI Krishi Assistant</div>
-            <div style="font-size:11px;color:var(--text2)">बीज, खाद, कीटनाशक की जानकारी पूछें</div>
+        <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span id="ai-provider-icon" style="font-size:22px">🤖</span>
+            <div>
+              <div style="font-size:14px;font-weight:700" id="ai-provider-name">AI Krishi Assistant</div>
+              <div style="font-size:11px;color:var(--text2)">बीज, खाद, कीटनाशक की जानकारी पूछें</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <div class="ai-provider-toggle">
+              <button class="ai-prov-btn active" id="btn-gemini" onclick="setAIProvider('gemini')"><span>✨</span> Gemini</button>
+              <button class="ai-prov-btn" id="btn-groq" onclick="setAIProvider('groq')"><span>⚡</span> Groq</button>
+            </div>
+            <button class="btn btn-sm btn-ghost" onclick="clearChat()" title="Clear chat">🗑</button>
           </div>
         </div>
         <div class="chat-messages" id="chat-messages">
           <div class="chat-msg ai">नमस्ते! 🙏 मैं आपका AI Krishi सहायक हूँ।<br><br>मुझसे पूछें: बीज, खाद, कीटनाशक की जानकारी, प्रति एकड़ मात्रा, कब और कैसे उपयोग करें, फसल रोगों का इलाज।<br><br><em>Ask me anything about agricultural products!</em></div>
         </div>
         <div class="chat-input-row">
-          <input class="chat-input" id="chat-input" placeholder="Type your question... / अपना सवाल पूछें..." onkeydown="if(event.key==='Enter')sendChat()">
-          <button class="btn btn-primary" onclick="sendChat()">➤</button>
+          <button id="voice-btn" class="btn btn-ghost" style="padding:0 10px;font-size:20px;flex-shrink:0" onclick="toggleVoice()" title="Voice input">🎤</button>
+          <input class="chat-input" id="chat-input" placeholder="Type or speak... / बोलें या टाइप करें..." onkeydown="if(event.key==='Enter')sendChat()">
+          <button class="btn btn-primary" onclick="sendChat()" style="flex-shrink:0">➤</button>
         </div>
       </div>
-      <div class="ai-quick-btns">
-        <div style="font-size:13px;font-weight:700;margin-bottom:12px;color:var(--text2)">Quick Questions</div>
-        <button class="ai-quick-btn" onclick="askQuick('🌱 Best seeds for rabi season?')">🌱 Seed Info</button>
-        <button class="ai-quick-btn" onclick="askQuick('💊 DAP fertilizer dose per acre?')">💊 Fertilizer Dose</button>
-        <button class="ai-quick-btn" onclick="askQuick('🧪 Which pesticide for aphids?')">🧪 Pesticide Use</button>
-        <button class="ai-quick-btn" onclick="askQuick('🌿 How to treat crop disease?')">🌿 Crop Disease</button>
-        <button class="ai-quick-btn" onclick="askQuick('📐 How to calculate per acre dose?')">📐 Per Acre Dose</button>
-        <button class="ai-quick-btn" onclick="askQuick('💧 Water to fertilizer ratio?')">💧 Water Ratio</button>
-        <div style="font-size:11px;color:var(--text3);margin-top:16px;padding:10px;background:var(--bg3);border-radius:8px">
-          💡 <strong>Note:</strong> Add your Anthropic API key in <a style="color:var(--primary);cursor:pointer" onclick="navTo('settings',null)">Settings</a> to enable AI responses.
+      <!-- Right panel: quick btns + chat history -->
+      <div style="display:flex;flex-direction:column;gap:16px;overflow-y:auto">
+        <div class="ai-quick-btns">
+          <div style="font-size:13px;font-weight:700;margin-bottom:12px;color:var(--text2)">Quick Questions</div>
+          <button class="ai-quick-btn" onclick="askQuick('🌱 Best seeds for rabi season in Madhya Pradesh?')">🌱 Rabi Seeds</button>
+          <button class="ai-quick-btn" onclick="askQuick('💊 DAP fertilizer dose per acre?')">💊 Fertilizer Dose</button>
+          <button class="ai-quick-btn" onclick="askQuick('🧪 Which pesticide for aphids on wheat?')">🧪 Aphid Control</button>
+          <button class="ai-quick-btn" onclick="askQuick('🌿 How to treat yellow rust in wheat?')">🌿 Crop Disease</button>
+          <button class="ai-quick-btn" onclick="askQuick('📐 How to calculate per acre dose?')">📐 Per Acre Dose</button>
+          <button class="ai-quick-btn" onclick="askQuick('💧 Water to fertilizer mixing ratio?')">💧 Water Ratio</button>
+          <div style="font-size:11px;color:var(--text3);margin-top:12px;padding:10px;background:var(--bg3);border-radius:8px;line-height:1.6">
+            💡 <strong>Active:</strong> <span id="ai-provider-note">Gemini (Free)</span><br>
+            Add keys in <a style="color:var(--primary);cursor:pointer" onclick="navTo('settings',null)">Settings →</a>
+          </div>
+        </div>
+        <!-- AI Reorder Suggestions -->
+        <div class="card">
+          <div class="card-header"><span class="card-title">🔄 Reorder Suggestions</span><button class="btn btn-sm btn-ghost" onclick="getReorderSuggestions()">🤖 Ask AI</button></div>
+          <div id="reorder-suggestions" style="padding:12px;font-size:13px;color:var(--text2)">Click "Ask AI" to get smart reorder suggestions based on your low stock.</div>
+        </div>
+        <!-- Chat History -->
+        <div class="card">
+          <div class="card-header"><span class="card-title">📜 Chat History</span><button class="btn btn-sm btn-ghost" onclick="clearChatHistory()">Clear</button></div>
+          <div id="chat-history-list" style="max-height:280px;overflow-y:auto">
+            <div style="padding:14px;font-size:13px;color:var(--text3);text-align:center">No saved conversations yet.</div>
+          </div>
         </div>
       </div>
     </div>
@@ -1680,25 +1804,64 @@ tr:hover td { background: var(--bg3); }
     <div class="settings-section">
       <div class="settings-section-title">🤖 AI Configuration</div>
       <div class="settings-card">
+
+        <!-- Anthropic -->
         <div class="settings-row">
           <div>
-            <div class="settings-row-label">Anthropic API Key</div>
-            <div class="settings-row-desc">Required for AI Assistant & Disease Scanner features.<br>Get your key at <strong>console.anthropic.com</strong> → API Keys</div>
+            <div class="settings-row-label">Anthropic API Key <span class="badge badge-warning" style="font-size:10px;margin-left:4px">Paid</span></div>
+            <div class="settings-row-desc">For Disease Scanner (image analysis). Get at <strong>console.anthropic.com</strong></div>
           </div>
           <div class="api-key-wrapper">
             <input class="api-key-input" id="api-key-input" type="password" placeholder="sk-ant-...">
-            <button class="api-key-toggle" onclick="toggleApiKeyVisibility()">👁</button>
+            <button class="api-key-toggle" onclick="toggleKeyVis('api-key-input',this)">👁</button>
           </div>
         </div>
-        <div class="settings-row" style="background:var(--primary-light);border-radius:0 0 var(--radius) var(--radius)">
-          <div style="font-size:12px;color:var(--text2);line-height:1.6">
-            📌 <strong>Where to get API key:</strong><br>
-            1. Go to <strong>console.anthropic.com</strong><br>
-            2. Sign up / Log in<br>
-            3. Go to <strong>API Keys</strong> section<br>
-            4. Click <strong>Create Key</strong> and paste it above
+        <div class="settings-row" style="padding-top:0;border-top:none">
+          <div></div>
+          <button class="btn btn-sm btn-primary" onclick="saveApiKey('anthropic')">Save</button>
+        </div>
+
+        <div style="height:1px;background:var(--border);margin:4px 0"></div>
+
+        <!-- Gemini -->
+        <div class="settings-row">
+          <div>
+            <div class="settings-row-label">Google Gemini API Key <span class="badge badge-success" style="font-size:10px;margin-left:4px">Free</span></div>
+            <div class="settings-row-desc">For AI Chat (free tier). Get at <strong>aistudio.google.com</strong></div>
           </div>
-          <button class="btn btn-primary" onclick="saveApiKey()">Save Key</button>
+          <div class="api-key-wrapper">
+            <input class="api-key-input" id="gemini-key-input" type="password" placeholder="AIza...">
+            <button class="api-key-toggle" onclick="toggleKeyVis('gemini-key-input',this)">👁</button>
+          </div>
+        </div>
+        <div class="settings-row" style="padding-top:0;border-top:none">
+          <div></div>
+          <button class="btn btn-sm btn-primary" onclick="saveApiKey('gemini')">Save</button>
+        </div>
+
+        <div style="height:1px;background:var(--border);margin:4px 0"></div>
+
+        <!-- Groq -->
+        <div class="settings-row">
+          <div>
+            <div class="settings-row-label">Groq API Key <span class="badge badge-success" style="font-size:10px;margin-left:4px">Free</span></div>
+            <div class="settings-row-desc">For AI Chat (ultra fast). Get at <strong>console.groq.com</strong></div>
+          </div>
+          <div class="api-key-wrapper">
+            <input class="api-key-input" id="groq-key-input" type="password" placeholder="gsk_...">
+            <button class="api-key-toggle" onclick="toggleKeyVis('groq-key-input',this)">👁</button>
+          </div>
+        </div>
+        <div class="settings-row" style="padding-top:0;border-top:none">
+          <div></div>
+          <button class="btn btn-sm btn-primary" onclick="saveApiKey('groq')">Save</button>
+        </div>
+
+        <div style="background:var(--primary-light);border-radius:var(--radius-sm);padding:12px 14px;margin-top:4px;font-size:12px;color:var(--text2);line-height:1.7">
+          📌 <strong>How to get free keys:</strong><br>
+          • <strong>Gemini:</strong> aistudio.google.com → Get API Key (completely free, 1500 req/day)<br>
+          • <strong>Groq:</strong> console.groq.com → API Keys → Create (free tier available)<br>
+          • <strong>Disease Scanner</strong> always uses Gemini (supports images)
         </div>
       </div>
     </div>
@@ -1818,9 +1981,39 @@ tr:hover td { background: var(--bg3); }
       <button class="modal-close" onclick="closeModal('add-product-modal')">✕</button>
     </div>
     <div class="modal-body">
+      <!-- Barcode Scan Section -->
+      <div style="background:var(--primary-light);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:16px;border:1.5px dashed var(--primary)">
+        <div style="font-size:12px;font-weight:700;color:var(--primary);margin-bottom:8px">📷 Quick Add via Barcode / AI Lookup</div>
+        <div style="display:flex;gap:8px">
+          <input class="form-input" id="p-barcode" placeholder="Scan barcode or type product name..." style="flex:1;font-size:13px" onkeydown="if(event.key==='Enter')aiLookupProduct()">
+          <button class="btn btn-primary btn-sm" onclick="startBarcodeScanner()" title="Scan barcode">📷</button>
+          <button class="btn btn-sm" style="background:var(--primary);color:white" onclick="aiLookupProduct()" title="AI Lookup">🤖 AI</button>
+        </div>
+        <div id="barcode-scanner-wrap" style="display:none;margin-top:10px">
+          <video id="barcode-video" style="width:100%;border-radius:8px;max-height:180px;object-fit:cover" autoplay playsinline></video>
+          <button class="btn btn-ghost btn-sm btn-block" style="margin-top:6px" onclick="stopBarcodeScanner()">✕ Cancel Scan</button>
+        </div>
+        <div id="ai-lookup-result" style="display:none;margin-top:10px;padding:10px;background:var(--bg2);border-radius:8px;font-size:12px;color:var(--text2);line-height:1.6"></div>
+      </div>
+
+      <!-- Product Image preview from AI -->
+      <div id="p-image-wrap" style="display:none;margin-bottom:12px;text-align:center">
+        <img id="p-image-preview" style="width:80px;height:80px;object-fit:contain;border-radius:10px;border:1px solid var(--border)" alt="product">
+      </div>
+
       <div class="form-group">
         <label class="form-label">Product Name *</label>
         <input class="form-input" id="p-name" placeholder="Product name / उत्पाद का नाम">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Item Code / Barcode</label>
+          <input class="form-input" id="p-itemcode" placeholder="e.g. 123456789">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Company</label>
+          <input class="form-input" id="p-company" placeholder="Company name">
+        </div>
       </div>
       <div class="form-row">
         <div class="form-group">
@@ -1860,13 +2053,9 @@ tr:hover td { background: var(--bg3); }
           <input class="form-input" id="p-stock" type="number" placeholder="0">
         </div>
         <div class="form-group">
-          <label class="form-label">Company</label>
-          <input class="form-input" id="p-company" placeholder="Company name">
+          <label class="form-label">Notes / Formula</label>
+          <input class="form-input" id="p-notes" placeholder="Ingredients, formula...">
         </div>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Notes</label>
-        <input class="form-input" id="p-notes" placeholder="Any notes...">
       </div>
     </div>
     <div class="modal-footer">
@@ -1957,9 +2146,11 @@ let db = {
   bills: [],
   udhar: [],
   returns: [],
+  diseaseHistory: [],
+  chatHistory: [],
   settings: {
     shopName: 'GKK', ownerName: '', phone: '', address: '',
-    lowStockLevel: 5, apiKey: '', theme: 'slate'
+    lowStockLevel: 5, apiKey: '', geminiKey: '', groqKey: '', theme: 'slate'
   }
 };
 let cart = [];
@@ -1979,6 +2170,8 @@ function loadData() {
   }
   applyTheme(db.settings.theme || 'slate', null, true);
   if (db.settings.apiKey) document.getElementById('api-key-input').value = db.settings.apiKey;
+  if (db.settings.geminiKey) document.getElementById('gemini-key-input').value = db.settings.geminiKey;
+  if (db.settings.groqKey) document.getElementById('groq-key-input').value = db.settings.groqKey;
   if (db.settings.shopName) document.getElementById('set-shop-name').value = db.settings.shopName;
   if (db.settings.ownerName) document.getElementById('set-owner').value = db.settings.ownerName;
   if (db.settings.phone) document.getElementById('set-phone').value = db.settings.phone;
@@ -2000,6 +2193,8 @@ window.addEventListener('DOMContentLoaded', () => {
   renderUdhar();
   renderOrders();
   renderProfitLoss();
+  renderDiseaseHistory();
+  renderChatHistory();
 });
 
 // ==================== NAVIGATION ====================
@@ -2026,6 +2221,7 @@ function navTo(page, el) {
   if (page === 'udhar') renderUdhar();
   if (page === 'orders') renderOrders();
   if (page === 'profit') renderProfitLoss();
+  if (page === 'reports') renderReports();
   if (page === 'billing') renderBillProducts();
 }
 
@@ -2151,19 +2347,424 @@ function saveProduct() {
     stock: parseInt(document.getElementById('p-stock').value) || 0,
     company: document.getElementById('p-company').value.trim(),
     notes: document.getElementById('p-notes').value.trim(),
+    itemCode: document.getElementById('p-itemcode').value.trim(),
     createdAt: new Date().toISOString()
   };
   db.products.push(product);
   saveData();
   closeModal('add-product-modal');
-  document.getElementById('p-name').value = '';
-  document.getElementById('p-buy').value = '';
-  document.getElementById('p-sell').value = '';
-  document.getElementById('p-stock').value = '';
-  document.getElementById('p-company').value = '';
-  document.getElementById('p-notes').value = '';
+  ['p-name','p-buy','p-sell','p-stock','p-company','p-notes','p-itemcode','p-barcode'].forEach(id => { const el = document.getElementById(id); if(el) el.value=''; });
+  document.getElementById('ai-lookup-result').style.display = 'none';
   renderProducts(); renderStock(); renderBillProducts(); refreshDashboard();
   showToast('Product added!');
+}
+
+// ==================== BARCODE + AI PRODUCT LOOKUP ====================
+let barcodeStream = null;
+
+async function startBarcodeScanner() {
+  const wrap = document.getElementById('barcode-scanner-wrap');
+  wrap.style.display = 'block';
+  try {
+    barcodeStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    document.getElementById('barcode-video').srcObject = barcodeStream;
+    showToast('📷 Camera started — point at barcode', 'ℹ️');
+    // Use BarcodeDetector if available
+    if ('BarcodeDetector' in window) {
+      const detector = new BarcodeDetector({ formats: ['ean_13','ean_8','code_128','qr_code','upc_a','upc_e'] });
+      const video = document.getElementById('barcode-video');
+      const scanLoop = setInterval(async () => {
+        if (!barcodeStream) { clearInterval(scanLoop); return; }
+        try {
+          const barcodes = await detector.detect(video);
+          if (barcodes.length > 0) {
+            clearInterval(scanLoop);
+            stopBarcodeScanner();
+            const code = barcodes[0].rawValue;
+            document.getElementById('p-barcode').value = code;
+            document.getElementById('p-itemcode').value = code;
+            showToast('✅ Barcode scanned: ' + code);
+            aiLookupProduct();
+          }
+        } catch(e) {}
+      }, 500);
+    } else {
+      showToast('Manual entry: type barcode below ↓', 'ℹ️');
+    }
+  } catch(e) {
+    wrap.style.display = 'none';
+    showToast('Camera access denied. Type barcode manually.', '⚠️');
+  }
+}
+
+function stopBarcodeScanner() {
+  if (barcodeStream) { barcodeStream.getTracks().forEach(t => t.stop()); barcodeStream = null; }
+  const wrap = document.getElementById('barcode-scanner-wrap');
+  if (wrap) wrap.style.display = 'none';
+}
+
+async function aiLookupProduct() {
+  const query = document.getElementById('p-barcode').value.trim();
+  if (!query) { showToast('Enter product name or barcode first', '⚠️'); return; }
+  const key = db.settings.geminiKey;
+  if (!key) { showToast('Add Gemini API key in Settings for AI lookup', '⚠️'); return; }
+
+  const resultDiv = document.getElementById('ai-lookup-result');
+  resultDiv.style.display = 'block';
+  resultDiv.innerHTML = '🤖 Looking up product info...';
+
+  try {
+    const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: `You are an agricultural product database for India. For the product: "${query}"
+Respond ONLY in this exact JSON format (no markdown, no extra text):
+{
+  "name": "exact product name",
+  "company": "manufacturer company",
+  "category": "one of: Seeds / बीज, Fertilizer / खाद, Pesticide / कीटनाशक, Herbicide / खरपतवार, Tools / उपकरण, Irrigation / सिंचाई, Other / अन्य",
+  "unit": "one of: kg, g, L, ml, packet, bag, bottle, piece",
+  "formula": "active ingredients or chemical formula",
+  "description": "brief description in 1-2 lines",
+  "use": "main crops and pests it targets"
+}
+If unknown, fill with best guesses based on the name.` }] }],
+        generationConfig: { maxOutputTokens: 400 }
+      })
+    });
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error.message);
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('Could not parse response');
+    const info = JSON.parse(jsonMatch[0]);
+
+    // Auto-fill the form
+    if (info.name) document.getElementById('p-name').value = info.name;
+    if (info.company) document.getElementById('p-company').value = info.company;
+    if (info.category) document.getElementById('p-cat').value = info.category;
+    if (info.unit) document.getElementById('p-unit').value = info.unit;
+    if (info.formula || info.description) document.getElementById('p-notes').value = (info.formula ? info.formula + ' | ' : '') + (info.description || '');
+
+    resultDiv.innerHTML = `<strong style="color:var(--success)">✅ Found: ${info.name}</strong><br>
+      <span style="color:var(--text2)">${info.company || ''} ${info.category ? '• ' + info.category : ''}</span><br>
+      ${info.formula ? '<span style="font-size:11px">🧪 ' + info.formula + '</span><br>' : ''}
+      ${info.use ? '<span style="font-size:11px">🌾 ' + info.use + '</span><br>' : ''}
+      <span style="font-size:11px;color:var(--primary)">✏️ Fill Buy/Sell price & Stock to save</span>`;
+    document.getElementById('p-sell').focus();
+  } catch(e) {
+    resultDiv.innerHTML = `<span style="color:var(--danger)">❌ Lookup failed: ${e.message}. Fill manually.</span>`;
+  }
+}
+
+// ==================== REPORTS & CHARTS ====================
+let reportPeriod = 'week';
+let chartTopProducts, chartCategory, chartDaily;
+
+function setReportPeriod(p, el) {
+  reportPeriod = p;
+  document.querySelectorAll('#page-reports .pill-tab').forEach(b => b.classList.remove('active'));
+  if (el) el.classList.add('active');
+  renderReports();
+}
+
+function getFilteredBills() {
+  const now = new Date();
+  return db.bills.filter(b => {
+    const d = new Date(b.createdAt);
+    if (reportPeriod === 'week') { const w = new Date(now); w.setDate(w.getDate()-7); return d >= w; }
+    if (reportPeriod === 'month') { const m = new Date(now); m.setDate(m.getDate()-30); return d >= m; }
+    return true;
+  });
+}
+
+function renderReports() {
+  const bills = getFilteredBills();
+  const revenue = bills.reduce((s,b) => s + b.total, 0);
+  const profit = bills.reduce((s,b) => s + b.profit, 0);
+  const margin = revenue ? (profit/revenue*100).toFixed(1) : 0;
+
+  document.getElementById('rep-revenue').textContent = '₹' + revenue.toFixed(0);
+  document.getElementById('rep-profit').textContent = '₹' + profit.toFixed(0);
+  document.getElementById('rep-bills').textContent = bills.length;
+  document.getElementById('rep-margin').textContent = margin + '%';
+
+  // Build product sales map
+  const prodMap = {};
+  bills.forEach(b => b.items.forEach(i => {
+    if (!prodMap[i.name]) prodMap[i.name] = { qty:0, revenue:0, profit:0, category: i.category||'Other' };
+    prodMap[i.name].qty += i.qty;
+    prodMap[i.name].revenue += i.sellPrice * i.qty;
+    prodMap[i.name].profit += (i.sellPrice - i.buyPrice) * i.qty;
+  }));
+
+  const sorted = Object.entries(prodMap).sort((a,b) => b[1].revenue - a[1].revenue);
+
+  // Product table
+  const tbody = document.getElementById('rep-product-table');
+  if (tbody) {
+    tbody.innerHTML = sorted.length ? sorted.map(([name, d]) =>
+      `<tr><td><strong>${name}</strong></td><td>${d.qty}</td><td style="font-family:var(--font-mono)">₹${d.revenue.toFixed(0)}</td><td style="font-family:var(--font-mono);color:var(--success)">₹${d.profit.toFixed(0)}</td></tr>`
+    ).join('') : '<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--text3)">No sales data</td></tr>';
+  }
+
+  // Category map
+  const catMap = {};
+  bills.forEach(b => b.items.forEach(i => {
+    const cat = i.category || 'Other';
+    catMap[cat] = (catMap[cat] || 0) + i.sellPrice * i.qty;
+  }));
+
+  // Daily map (last 7 or 30 days)
+  const days = reportPeriod === 'week' ? 7 : 30;
+  const dailyMap = {};
+  const labels = [];
+  for (let i = days-1; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate()-i);
+    const key = d.toISOString().split('T')[0];
+    dailyMap[key] = 0;
+    labels.push(d.toLocaleDateString('en-IN', { day:'numeric', month:'short' }));
+  }
+  bills.forEach(b => {
+    const key = new Date(b.createdAt).toISOString().split('T')[0];
+    if (dailyMap[key] !== undefined) dailyMap[key] += b.total;
+  });
+
+  const primaryColor = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim() || '#6c63ff';
+
+  // Top Products Bar Chart
+  const topN = sorted.slice(0,6);
+  const canvasTP = document.getElementById('chart-top-products');
+  const emptyTP = document.getElementById('chart-top-products-empty');
+  if (topN.length === 0) { canvasTP.style.display='none'; emptyTP.style.display=''; } 
+  else {
+    canvasTP.style.display=''; emptyTP.style.display='none';
+    if (chartTopProducts) chartTopProducts.destroy();
+    chartTopProducts = new Chart(canvasTP, {
+      type: 'bar',
+      data: {
+        labels: topN.map(([n]) => n.length > 14 ? n.slice(0,14)+'…' : n),
+        datasets: [{ label:'Revenue (₹)', data: topN.map(([,d]) => d.revenue), backgroundColor: primaryColor + 'cc', borderRadius: 6, borderSkipped: false }]
+      },
+      options: { responsive:true, plugins:{ legend:{display:false} }, scales:{ y:{ beginAtZero:true, ticks:{ callback: v => '₹'+v } }, x:{ ticks:{ font:{size:10} } } } }
+    });
+  }
+
+  // Category Doughnut Chart
+  const catKeys = Object.keys(catMap);
+  const canvasCat = document.getElementById('chart-category');
+  const emptyCat = document.getElementById('chart-category-empty');
+  if (catKeys.length === 0) { canvasCat.style.display='none'; emptyCat.style.display=''; }
+  else {
+    canvasCat.style.display=''; emptyCat.style.display='none';
+    const palette = ['#6c63ff','#43b89c','#f6c90e','#ff6584','#63b3ed','#f687b3','#68d391','#fc8181'];
+    if (chartCategory) chartCategory.destroy();
+    chartCategory = new Chart(canvasCat, {
+      type: 'doughnut',
+      data: {
+        labels: catKeys,
+        datasets: [{ data: catKeys.map(k => catMap[k]), backgroundColor: catKeys.map((_,i) => palette[i%palette.length]), borderWidth: 2 }]
+      },
+      options: { responsive:true, plugins:{ legend:{ position:'bottom', labels:{ font:{size:11}, padding:10 } } }, cutout:'60%' }
+    });
+  }
+
+  // Daily Sales Line Chart
+  if (chartDaily) chartDaily.destroy();
+  chartDaily = new Chart(document.getElementById('chart-daily'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{ label:'Sales (₹)', data: Object.values(dailyMap), borderColor: primaryColor, backgroundColor: primaryColor+'22', tension:0.4, fill:true, pointRadius:3 }]
+    },
+    options: { responsive:true, plugins:{ legend:{display:false} }, scales:{ y:{ beginAtZero:true, ticks:{ callback: v => '₹'+v } }, x:{ ticks:{ maxTicksLimit:7, font:{size:10} } } } }
+  });
+}
+
+// ==================== PDF EXPORT ====================
+function exportPDF() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  const shop = db.settings.shopName || 'GKK';
+  const now = new Date().toLocaleDateString('en-IN');
+  const bills = getFilteredBills();
+  const revenue = bills.reduce((s,b) => s+b.total, 0);
+  const profit = bills.reduce((s,b) => s+b.profit, 0);
+
+  // Header
+  doc.setFontSize(20); doc.setFont('helvetica','bold');
+  doc.text(shop, 105, 20, { align:'center' });
+  doc.setFontSize(11); doc.setFont('helvetica','normal');
+  doc.text('Sales Report — ' + now, 105, 28, { align:'center' });
+  doc.line(15, 32, 195, 32);
+
+  // Summary
+  doc.setFontSize(13); doc.setFont('helvetica','bold');
+  doc.text('Summary', 15, 42);
+  doc.setFontSize(11); doc.setFont('helvetica','normal');
+  doc.text(`Period: ${reportPeriod === 'week' ? 'Last 7 days' : reportPeriod === 'month' ? 'Last 30 days' : 'All Time'}`, 15, 50);
+  doc.text(`Total Revenue: Rs. ${revenue.toFixed(0)}`, 15, 58);
+  doc.text(`Total Profit: Rs. ${profit.toFixed(0)}`, 15, 66);
+  doc.text(`Total Bills: ${bills.length}`, 15, 74);
+  doc.text(`Profit Margin: ${revenue ? (profit/revenue*100).toFixed(1) : 0}%`, 15, 82);
+  doc.line(15, 87, 195, 87);
+
+  // Product breakdown
+  doc.setFontSize(13); doc.setFont('helvetica','bold');
+  doc.text('Product-wise Sales', 15, 97);
+  doc.setFontSize(10); doc.setFont('helvetica','bold');
+  doc.text('Product', 15, 106); doc.text('Qty', 110, 106); doc.text('Revenue', 135, 106); doc.text('Profit', 170, 106);
+  doc.line(15, 109, 195, 109);
+
+  const prodMap = {};
+  bills.forEach(b => b.items.forEach(i => {
+    if (!prodMap[i.name]) prodMap[i.name] = { qty:0, revenue:0, profit:0 };
+    prodMap[i.name].qty += i.qty;
+    prodMap[i.name].revenue += i.sellPrice * i.qty;
+    prodMap[i.name].profit += (i.sellPrice - i.buyPrice) * i.qty;
+  }));
+  const sorted = Object.entries(prodMap).sort((a,b) => b[1].revenue - a[1].revenue);
+
+  doc.setFont('helvetica','normal');
+  let y = 117;
+  sorted.slice(0, 25).forEach(([name, d]) => {
+    if (y > 270) { doc.addPage(); y = 20; }
+    doc.text(name.slice(0,28), 15, y);
+    doc.text(String(d.qty), 110, y);
+    doc.text('Rs.' + d.revenue.toFixed(0), 135, y);
+    doc.text('Rs.' + d.profit.toFixed(0), 170, y);
+    y += 8;
+  });
+
+  // Footer
+  doc.setFontSize(9); doc.setFont('helvetica','italic');
+  doc.text('Generated by GKK App — ' + now, 105, 290, { align:'center' });
+
+  doc.save(`GKK_Report_${now.replace(/\//g,'-')}.pdf`);
+  showToast('📄 PDF exported!');
+}
+
+// ==================== VOICE INPUT ====================
+let recognition = null;
+let isListening = false;
+
+function toggleVoice() {
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    showToast('Voice not supported in this browser. Try Chrome.', '⚠️'); return;
+  }
+  if (isListening) {
+    recognition.stop(); return;
+  }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SR();
+  recognition.lang = 'hi-IN';
+  recognition.interimResults = true;
+  recognition.continuous = false;
+
+  recognition.onstart = () => {
+    isListening = true;
+    document.getElementById('voice-btn').textContent = '🔴';
+    document.getElementById('voice-btn').style.color = 'var(--danger)';
+    document.getElementById('chat-input').placeholder = 'Listening... / सुन रहा हूँ...';
+  };
+  recognition.onresult = e => {
+    const transcript = Array.from(e.results).map(r => r[0].transcript).join('');
+    document.getElementById('chat-input').value = transcript;
+  };
+  recognition.onend = () => {
+    isListening = false;
+    document.getElementById('voice-btn').textContent = '🎤';
+    document.getElementById('voice-btn').style.color = '';
+    document.getElementById('chat-input').placeholder = 'Type or speak... / बोलें या टाइप करें...';
+    const val = document.getElementById('chat-input').value.trim();
+    if (val) sendChat();
+  };
+  recognition.onerror = e => {
+    isListening = false;
+    document.getElementById('voice-btn').textContent = '🎤';
+    showToast('Voice error: ' + e.error, '⚠️');
+  };
+  recognition.start();
+}
+
+// ==================== CHAT HISTORY ====================
+function saveChatToHistory(userMsg, aiReply) {
+  if (!db.chatHistory) db.chatHistory = [];
+  db.chatHistory.unshift({
+    id: Date.now(),
+    provider: aiProvider,
+    userMsg: userMsg.slice(0, 100),
+    aiReply: aiReply.slice(0, 200),
+    date: new Date().toLocaleDateString('hi-IN')
+  });
+  db.chatHistory = db.chatHistory.slice(0, 30);
+  saveData();
+  renderChatHistory();
+}
+
+function renderChatHistory() {
+  const el = document.getElementById('chat-history-list');
+  if (!el) return;
+  if (!db.chatHistory || !db.chatHistory.length) {
+    el.innerHTML = '<div style="padding:14px;font-size:13px;color:var(--text3);text-align:center">No saved conversations yet.</div>';
+    return;
+  }
+  el.innerHTML = db.chatHistory.map(h => `
+    <div style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer" onclick="replayChatItem('${h.id}')">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:3px">${h.date} · ${h.provider||'AI'}</div>
+      <div style="font-size:12.5px;font-weight:600;color:var(--text)">${h.userMsg}${h.userMsg.length>=100?'…':''}</div>
+      <div style="font-size:11.5px;color:var(--text2);margin-top:2px">${h.aiReply}${h.aiReply.length>=200?'…':''}</div>
+    </div>`).join('');
+}
+
+function replayChatItem(id) {
+  const h = db.chatHistory?.find(x => x.id == id);
+  if (!h) return;
+  document.getElementById('chat-input').value = h.userMsg;
+  showToast('Question loaded — press Send');
+}
+
+function clearChat() {
+  document.getElementById('chat-messages').innerHTML = '<div class="chat-msg ai">नमस्ते! 🙏 Chat cleared. Ask me anything!</div>';
+}
+
+function clearChatHistory() {
+  db.chatHistory = [];
+  saveData();
+  renderChatHistory();
+  showToast('Chat history cleared');
+}
+
+// ==================== AI REORDER SUGGESTIONS ====================
+async function getReorderSuggestions() {
+  const key = db.settings.geminiKey;
+  if (!key) { showToast('Add Gemini API key in Settings', '⚠️'); return; }
+  const lowStock = db.products.filter(p => p.stock <= (db.settings.lowStockLevel || 5));
+  if (!lowStock.length) {
+    document.getElementById('reorder-suggestions').innerHTML = '✅ All products are well stocked! No reorder needed.';
+    return;
+  }
+  const el = document.getElementById('reorder-suggestions');
+  el.innerHTML = '🤖 Generating suggestions...';
+
+  const productList = lowStock.map(p => `${p.name} (${p.stock} ${p.unit} left, category: ${p.category})`).join('\n');
+  try {
+    const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role:'user', parts:[{ text: `You are an agricultural shop advisor. These products are low in stock:\n${productList}\n\nProvide brief reorder suggestions: recommended quantity to reorder, urgency (High/Medium/Low) based on season (current month: ${new Date().toLocaleString('en',{month:'long'})}), and any seasonal demand tip. Keep it concise, practical, in Hinglish. Format as bullet points.` }] }],
+        generationConfig: { maxOutputTokens: 400 }
+      })
+    });
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error.message);
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No suggestions.';
+    el.innerHTML = `<div style="font-size:12.5px;line-height:1.7;white-space:pre-wrap">${text}</div>`;
+  } catch(e) {
+    el.innerHTML = `<span style="color:var(--danger)">Error: ${e.message}</span>`;
+  }
 }
 
 function renderProducts() {
@@ -2225,7 +2826,7 @@ function renderStock() {
     if (isOut) out++;
     if (isLow) low++;
     const status = isOut ? '<span class="badge badge-danger">Out of Stock</span>' : isLow ? '<span class="badge badge-warning">Low Stock</span>' : '<span class="badge badge-success">In Stock</span>';
-    return `<tr><td><strong>${p.name}</strong><br><small style="color:var(--text3)">${p.company||''}</small></td><td>${p.category}</td><td style="font-family:var(--font-mono)">${p.stock} ${p.unit}</td><td>${status}</td><td><button class="btn btn-sm btn-outline" onclick="adjustStock('${p.id}')">Adjust</button></td></tr>`;
+    return `<tr><td><strong>${p.name}</strong><br><small style="color:var(--text3)">${p.category}${p.company?' · '+p.company:''}</small></td><td style="font-family:var(--font-mono)">${p.stock} ${p.unit}</td><td>${status}</td><td><button class="btn btn-sm btn-outline" onclick="adjustStock('${p.id}')">Adjust</button></td></tr>`;
   }).join('') || '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--text3)">No products</td></tr>';
   document.getElementById('stock-total').textContent = db.products.length;
   document.getElementById('stock-low').textContent = low;
@@ -2478,17 +3079,26 @@ function renderOrders() {
   document.getElementById('orders-badge').textContent = bills.length;
 
   if (!bills.length) { wrap.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📋</div><div class="empty-state-text">No orders found</div></div>'; return; }
-  wrap.innerHTML = `<table><thead><tr><th>Bill #</th><th>Customer</th><th>Items</th><th>Total</th><th>Payment</th><th>Date</th><th>Action</th></tr></thead><tbody>
-    ${bills.map(b => `<tr>
-      <td style="font-family:var(--font-mono);font-weight:700">${b.id}</td>
-      <td>${b.buyer?.name || '—'}<br><small style="color:var(--text3)">${b.buyer?.phone||''}</small></td>
-      <td>${b.items.length} items</td>
-      <td style="font-family:var(--font-mono);font-weight:700">₹${b.total.toFixed(0)}</td>
-      <td><span class="badge ${b.payment==='cash'?'badge-success':b.payment==='udhar'?'badge-danger':'badge-primary'}" style="text-transform:capitalize">${b.payment==='upi'?'📱 UPI':b.payment==='udhar'?'📒 Udhar':'💵 Cash'}</span></td>
-      <td style="font-size:12px;color:var(--text2)">${new Date(b.createdAt).toLocaleDateString('hi-IN')}</td>
-      <td><button class="btn btn-sm btn-outline" onclick="showBillDetailById('${b.id}')">View</button></td>
-    </tr>`).join('')}
-  </tbody></table>`;
+
+  wrap.innerHTML = bills.map(b => {
+    const payIcon = b.payment==='upi' ? '📱 UPI' : b.payment==='udhar' ? '📒 Udhar' : '💵 Cash';
+    const payBadge = b.payment==='cash' ? 'badge-success' : b.payment==='udhar' ? 'badge-danger' : 'badge-primary';
+    const dateStr = new Date(b.createdAt).toLocaleDateString('hi-IN');
+    return `<div class="order-card">
+      <div class="order-card-left">
+        <div class="order-card-id">#${b.id}</div>
+        <div class="order-card-customer">${b.buyer?.name || '—'}</div>
+        <div class="order-card-meta">${b.items.length} items · ${dateStr}</div>
+      </div>
+      <div class="order-card-right">
+        <div class="order-card-total">₹${b.total.toFixed(0)}</div>
+        <div class="order-card-actions">
+          <span class="badge ${payBadge}">${payIcon}</span>
+          <button class="btn btn-sm btn-outline" onclick="showBillDetailById('${b.id}')">View</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function showBillDetailById(id) {
@@ -2648,9 +3258,15 @@ function renderReturns() {
   const list = document.getElementById('returns-list');
   if (!list) return;
   if (!db.returns.length) { list.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🔄</div><div class="empty-state-text">No returns yet</div></div>'; return; }
-  list.innerHTML = `<table><thead><tr><th>Customer</th><th>Product</th><th>Qty</th><th>Reason</th><th>Date</th></tr></thead><tbody>
-    ${[...db.returns].reverse().map(r => `<tr><td>${r.customer}</td><td>${r.product}</td><td>${r.qty}</td><td><span class="badge badge-warning">${r.reason}</span></td><td style="font-size:12px">${new Date(r.createdAt).toLocaleDateString('hi-IN')}</td></tr>`).join('')}
-  </tbody></table>`;
+  list.innerHTML = [...db.returns].reverse().map(r => `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:12px 16px;border-bottom:1px solid var(--border);gap:8px">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:13.5px">${r.customer}</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px">${r.product} × ${r.qty}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px">${r.billNo ? 'Bill: '+r.billNo+' · ' : ''}${new Date(r.createdAt).toLocaleDateString('hi-IN')}</div>
+      </div>
+      <span class="badge badge-warning" style="flex-shrink:0">${r.reason}</span>
+    </div>`).join('');
 }
 
 // ==================== PROFIT & LOSS ====================
@@ -2738,6 +3354,23 @@ function refreshDashboard() {
 }
 
 // ==================== AI CHAT ====================
+let aiProvider = 'gemini'; // 'gemini' | 'groq'
+
+const AI_SYSTEM_PROMPT = 'You are an expert agricultural assistant for a krishi kendra (agri shop) in Madhya Pradesh, India. Answer questions about seeds, fertilizers, pesticides, crop diseases, irrigation, and farming in simple Hindi/English (Hinglish). Be concise and practical. Use ₹ for prices if mentioned.';
+
+function setAIProvider(p) {
+  aiProvider = p;
+  document.getElementById('btn-gemini').classList.toggle('active', p === 'gemini');
+  document.getElementById('btn-groq').classList.toggle('active', p === 'groq');
+  const icons = { gemini: '✨', groq: '⚡' };
+  const names = { gemini: 'AI Krishi Assistant (Gemini)', groq: 'AI Krishi Assistant (Groq)' };
+  const notes = { gemini: 'Gemini Flash (Free)', groq: 'Groq LLaMA (Free)' };
+  document.getElementById('ai-provider-icon').textContent = icons[p];
+  document.getElementById('ai-provider-name').textContent = names[p];
+  document.getElementById('ai-provider-note').textContent = notes[p];
+  showToast('Switched to ' + (p === 'gemini' ? '✨ Gemini' : '⚡ Groq'));
+}
+
 async function sendChat() {
   const input = document.getElementById('chat-input');
   const msg = input.value.trim();
@@ -2745,35 +3378,54 @@ async function sendChat() {
   addChatMsg(msg, 'user');
   input.value = '';
 
-  const apiKey = db.settings.apiKey;
-  if (!apiKey) {
-    addChatMsg('⚠️ Please add your Anthropic API key in Settings to use AI features.', 'ai');
-    return;
-  }
-
   const typingEl = addChatMsg('Thinking... 🤔', 'ai', true);
 
   try {
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5',
-        max_tokens: 1000,
-        system: 'You are an expert agricultural assistant for a krishi kendra (agri shop) in India. Answer questions about seeds, fertilizers, pesticides, crop diseases, irrigation, and farming in simple Hindi/English. Be concise and practical. Use ₹ for prices if mentioned.',
-        messages: [{ role: 'user', content: msg }]
-      })
-    });
-    const data = await resp.json();
-    typingEl.remove();
-    if (data.error) {
-      addChatMsg('⚠️ API Error: ' + (data.error.message || JSON.stringify(data.error)), 'ai');
-    } else {
-      addChatMsg(data.content?.[0]?.text || 'Sorry, could not get response.', 'ai');
+    let replyText = '';
+
+    if (aiProvider === 'gemini') {
+      const key = db.settings.geminiKey;
+      if (!key) { typingEl.remove(); addChatMsg('⚠️ Please add your Gemini API key in Settings to use Gemini.', 'ai'); return; }
+      const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: AI_SYSTEM_PROMPT }] },
+          contents: [{ role: 'user', parts: [{ text: msg }] }],
+          generationConfig: { maxOutputTokens: 1000 }
+        })
+      });
+      const data = await resp.json();
+      if (data.error) throw new Error(data.error.message);
+      replyText = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response received.';
+
+    } else if (aiProvider === 'groq') {
+      const key = db.settings.groqKey;
+      if (!key) { typingEl.remove(); addChatMsg('⚠️ Please add your Groq API key in Settings to use Groq.', 'ai'); return; }
+      const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          max_tokens: 1000,
+          messages: [
+            { role: 'system', content: AI_SYSTEM_PROMPT },
+            { role: 'user', content: msg }
+          ]
+        })
+      });
+      const data = await resp.json();
+      if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+      replyText = data.choices?.[0]?.message?.content || 'No response received.';
     }
+
+    typingEl.remove();
+    addChatMsg(replyText, 'ai');
+    saveChatToHistory(msg, replyText);
+
   } catch(e) {
     typingEl.remove();
-    addChatMsg('❌ Network error. Check internet connection and try again.\n' + e.message, 'ai');
+    addChatMsg('❌ Error: ' + e.message, 'ai');
   }
 }
 
@@ -2823,32 +3475,39 @@ function handleDiseaseFileDrop(e) {
 
 async function scanDisease() {
   if (!diseaseImageData) { showToast('Please upload a crop photo first', '⚠️'); return; }
-  const apiKey = db.settings.apiKey;
-  if (!apiKey) { showToast('Add API key in Settings first', '⚠️'); return; }
+  const apiKey = db.settings.geminiKey;
+  if (!apiKey) { showToast('Add Gemini API key in Settings first', '⚠️'); return; }
   const resultCard = document.getElementById('disease-result-card');
-  resultCard.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text2)"><div style="font-size:30px;margin-bottom:8px">🤖</div>AI analyzing... / विश्लेषण हो रहा है</div>';
+  resultCard.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text2)"><div style="font-size:30px;margin-bottom:8px">✨</div>Gemini AI analyzing... / विश्लेषण हो रहा है</div>';
 
   try {
     const base64 = diseaseImageData.split(',')[1];
     const mediaType = diseaseImageData.split(';')[0].split(':')[1];
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5',
-        max_tokens: 800,
-        messages: [{ role: 'user', content: [
-          { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
-          { type: 'text', text: 'You are an expert agricultural disease diagnostician. Analyze this crop image and provide: 1) Disease/pest identified (if any), 2) Severity, 3) Treatment recommendations with pesticide/fungicide names available in India, 4) Prevention tips. If the image is not a crop, say so. Be concise and practical. Use both Hindi and English.' }
-        ]}]
+        contents: [{ role: 'user', parts: [
+          { inline_data: { mime_type: mediaType, data: base64 } },
+          { text: 'You are an expert agricultural disease diagnostician for India. Analyze this crop image and provide: 1) Disease/pest identified (if any), 2) Severity, 3) Treatment recommendations with pesticide/fungicide names available in India with doses, 4) Prevention tips. If not a crop image, say so. Be concise and practical. Use Hindi and English (Hinglish).' }
+        ]}],
+        generationConfig: { maxOutputTokens: 800 }
       })
     });
     const data = await resp.json();
-    const result = data.content?.[0]?.text || 'Could not analyze image.';
-    resultCard.innerHTML = `<div style="font-size:14px;line-height:1.7;white-space:pre-wrap">${result}</div>`;
-    showToast('Disease scan complete!');
+    if (data.error) throw new Error(data.error.message);
+    const result = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Could not analyze image.';
+    resultCard.innerHTML = `<div style="font-size:14px;line-height:1.8;white-space:pre-wrap;padding:4px">${result}</div>`;
+
+    // Save to history
+    const history = db.diseaseHistory || [];
+    history.unshift({ date: new Date().toLocaleDateString('hi-IN'), result: result.substring(0, 150) + '...' });
+    db.diseaseHistory = history.slice(0, 10);
+    saveData();
+    renderDiseaseHistory();
+    showToast('✨ Disease scan complete!');
   } catch(e) {
-    resultCard.innerHTML = '<div class="empty-state"><div class="empty-state-icon">❌</div><div class="empty-state-text">Scan failed. Check API key.</div></div>';
+    resultCard.innerHTML = `<div class="empty-state"><div class="empty-state-icon">❌</div><div class="empty-state-text">Scan failed: ${e.message}</div></div>`;
   }
 }
 
@@ -2858,6 +3517,18 @@ function clearDisease() {
   document.getElementById('disease-preview').style.display = 'none';
   document.getElementById('disease-placeholder').style.display = 'block';
   document.getElementById('disease-result-card').innerHTML = '<div class="empty-state"><div class="empty-state-icon">🌾</div><div class="empty-state-text">Upload a crop photo to diagnose</div></div>';
+}
+
+function renderDiseaseHistory() {
+  const el = document.getElementById('disease-history');
+  if (!el) return;
+  const history = db.diseaseHistory || [];
+  if (!history.length) { el.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📷</div><div class="empty-state-text">No recent scans</div></div>'; return; }
+  el.innerHTML = history.map(h => `
+    <div style="padding:12px 16px;border-bottom:1px solid var(--border)">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:4px">📅 ${h.date}</div>
+      <div style="font-size:13px;color:var(--text2);line-height:1.5">${h.result}</div>
+    </div>`).join('');
 }
 
 // ==================== SETTINGS ====================
@@ -2870,15 +3541,29 @@ function saveSettings() {
   saveData(); showToast('Settings saved!');
 }
 
-function saveApiKey() {
-  const key = document.getElementById('api-key-input').value.trim();
-  db.settings.apiKey = key;
-  saveData(); showToast(key ? '🔑 API key saved!' : 'API key cleared');
+function saveApiKey(provider) {
+  if (provider === 'anthropic') {
+    const key = document.getElementById('api-key-input').value.trim();
+    db.settings.apiKey = key;
+    saveData(); showToast(key ? '🔑 Anthropic key saved!' : 'Anthropic key cleared');
+  } else if (provider === 'gemini') {
+    const key = document.getElementById('gemini-key-input').value.trim();
+    db.settings.geminiKey = key;
+    saveData(); showToast(key ? '✨ Gemini key saved!' : 'Gemini key cleared');
+  } else if (provider === 'groq') {
+    const key = document.getElementById('groq-key-input').value.trim();
+    db.settings.groqKey = key;
+    saveData(); showToast(key ? '⚡ Groq key saved!' : 'Groq key cleared');
+  }
+}
+
+function toggleKeyVis(inputId, btn) {
+  const inp = document.getElementById(inputId);
+  inp.type = inp.type === 'password' ? 'text' : 'password';
 }
 
 function toggleApiKeyVisibility() {
-  const inp = document.getElementById('api-key-input');
-  inp.type = inp.type === 'password' ? 'text' : 'password';
+  toggleKeyVis('api-key-input', null);
 }
 
 function exportData() {
