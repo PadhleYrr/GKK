@@ -373,66 +373,50 @@ window.grantPermissionsFromModal = async function() {
   const btn = document.getElementById('perm-grant-btn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Requesting...'; }
 
-  // Request each permission one at a time, updating status icons live
-
-  // 1. Notifications
-  try {
-    let notifResult = 'denied';
-    // Try Capacitor native first (Android app)
-    if (window.Capacitor?.Plugins?.LocalNotifications) {
-      const r = await window.Capacitor.Plugins.LocalNotifications.requestPermissions();
-      notifResult = r.display === 'granted' ? 'granted' : 'denied';
-    } else if ('Notification' in window) {
-      notifResult = await Notification.requestPermission();
-    }
-    const el = document.getElementById('perm-notif-status');
-    if (el) el.textContent = notifResult === 'granted' ? '✅' : '❌';
-  } catch(e) {
-    const el = document.getElementById('perm-notif-status');
-    if (el) el.textContent = '❌';
+  function setStatus(id, ok) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = ok ? '✅' : '❌';
   }
 
-  // 2. Camera
+  // 1. NOTIFICATIONS — triggers native Android dialog (POST_NOTIFICATIONS in manifest)
   try {
-    let camGranted = false;
-    // Try Capacitor native first
-    if (window.Capacitor?.Plugins?.Camera) {
-      const r = await window.Capacitor.Plugins.Camera.requestPermissions({ permissions: ['camera'] });
-      camGranted = r.camera === 'granted';
-    } else if (navigator.mediaDevices?.getUserMedia) {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    let granted = false;
+    if ('Notification' in window) {
+      const result = await Notification.requestPermission();
+      granted = result === 'granted';
+    }
+    setStatus('perm-notif-status', granted);
+  } catch(e) { setStatus('perm-notif-status', false); }
+
+  // 2. CAMERA — getUserMedia triggers native Android camera dialog (CAMERA in manifest)
+  try {
+    let granted = false;
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
       stream.getTracks().forEach(t => t.stop());
-      camGranted = true;
+      granted = true;
     }
-    const el = document.getElementById('perm-cam-status');
-    if (el) el.textContent = camGranted ? '✅' : '❌';
+    setStatus('perm-cam-status', granted);
   } catch(e) {
-    const el = document.getElementById('perm-cam-status');
-    if (el) el.textContent = '❌';
+    setStatus('perm-cam-status', e.name === 'NotFoundError');
   }
 
-  // 3. Storage persistence
+  // 3. STORAGE PERSISTENCE — protects data from OS clearing after reinstall
   try {
-    let stored = false;
-    if (navigator.storage?.persist) {
-      stored = await navigator.storage.persist();
+    let persisted = false;
+    if (navigator.storage && navigator.storage.persist) {
+      persisted = await navigator.storage.persist();
     }
-    const el = document.getElementById('perm-store-status');
-    if (el) el.textContent = stored ? '✅' : '⚠️';
-  } catch(e) {
-    const el = document.getElementById('perm-store-status');
-    if (el) el.textContent = '⚠️';
-  }
+    setStatus('perm-store-status', persisted);
+  } catch(e) { setStatus('perm-store-status', false); }
 
   localStorage.setItem('gkk_permissions_asked', 'true');
-
-  // Wait a moment so user sees the results, then close
-  if (btn) { btn.textContent = '✅ Done! Closing...'; }
+  if (btn) btn.textContent = '✅ Done!';
   setTimeout(() => {
     const modal = document.getElementById('modal-permissions');
     if (modal) modal.remove();
-    toast('Permissions set! App is ready. 🚀');
-  }, 1200);
+    toast('🚀 App is ready!');
+  }, 1000);
 };
 
 window.skipPermissions = function() {
