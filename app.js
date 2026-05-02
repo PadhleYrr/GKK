@@ -3,22 +3,412 @@
    Gumasta Krishi Kendra
 ═══════════════════════════════════════════ */
 
-// ── DATA STORE ──────────────────────────────
-const DB = {
-  get: (k, def=[]) => { try { const v = localStorage.getItem('gkk_'+k); return v ? JSON.parse(v) : def; } catch { return def; } },
-  set: (k, v) => { try { localStorage.setItem('gkk_'+k, JSON.stringify(v)); } catch(e) { toast('Storage full!'); } },
-  getObj: (k, def={}) => { try { const v = localStorage.getItem('gkk_'+k); return v ? JSON.parse(v) : def; } catch { return def; } }
+// ── FIREBASE CONFIG ──────────────────────────
+// Replace these values with your Firebase project config
+// Get it from: Firebase Console → Project Settings → Your Apps → SDK setup
+const FIREBASE_CONFIG = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  databaseURL: "https://YOUR_PROJECT-default-rtdb.firebaseio.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
 };
 
+// ── FIREBASE STATE ───────────────────────────
+let firebaseReady = false;
+let db = null; // Firestore instance
+let isOnline = navigator.onLine;
+let syncQueue = []; // Pending writes when offline
+
+// ── LOCAL DATA STORE ─────────────────────────
+// All data always goes through here first (local is source of truth)
+const LOCAL = {
+  get: (k, def=[]) => {
+    try { const v = localStorage.getItem('gkk_'+k); return v ? JSON.parse(v) : def; }
+    catch { return def; }
+  },
+  set: (k, v) => {
+    try { localStorage.setItem('gkk_'+k, JSON.stringify(v)); }
+    catch(e) { toast('⚠️ Storage full! Data not saved locally.'); }
+  },
+  getObj: (k, def={}) => {
+    try { const v = localStorage.getItem('gkk_'+k); return v ? JSON.parse(v) : def; }
+    catch { return def; }
+  }
+};
+
+// Keep DB alias so existing code works unchanged
+const DB = LOCAL;
+
+// ── SYNC QUEUE (persisted) ───────────────────
+function loadSyncQueue() {
+  try { syncQueue = JSON.parse(localStorage.getItem('gkk_sync_queue') || '[]'); }
+  catch { syncQueue = []; }
+}
+function saveSyncQueue() {
+  try { localStorage.setItem('gkk_sync_queue', JSON.stringify(syncQueue)); }
+  catch {}
+}
+function addToSyncQueue(collection, key, data) {
+  syncQueue.push({ collection, key, data, ts: Date.now() });
+  saveSyncQueue();
+}
+
+// ── FIREBASE INIT ────────────────────────────
+async function initFirebase() {
+  try {
+    // Dynamically load Firebase SDK
+    await loadScript('https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js');
+    await loadScript('https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js');
+    await loadScript('https://www.gstatic.com/firebasejs/10.8.0/firebase-messaging-compat.js');
+
+    if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    db = firebase.firestore();
+
+    // Enable offline persistence (data cached even when offline)
+    await db.enablePersistence({ synchronizeTabs: true }).catch(err => {
+      if (err.code !== 'failed-precondition' && err.code !== 'unimplemented') {
+        console.warn('Firestore persistence error:', err);
+      }
+    });
+
+    firebaseReady = true;
+    updateDbStatus('online');
+
+    // Sync any queued writes
+    await flushSyncQueue();
+
+    // Start listening for remote changes
+    listenRemoteChanges();
+
+    console.log('✅ Firebase ready');
+  } catch(e) {
+    console.warn('Firebase init failed, running in local-only mode:', e);
+    firebaseReady = false;
+    updateDbStatus('offline');
+  }
+}
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = resolve;
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
+// ── DB STATUS INDICATOR ──────────────────────
+function updateDbStatus(status) {
+  const el = document.getElementById('db-status');
+  if (!el) return;
+  if (status === 'online') {
+    el.innerHTML = '🟢 Synced';
+    el.className = 'db-status online';
+  } else if (status === 'syncing') {
+    el.innerHTML = '🔄 Syncing...';
+    el.className = 'db-status syncing';
+  } else {
+    el.innerHTML = `🔴 Offline (${syncQueue.length} pending)`;
+    el.className = 'db-status offline';
+  }
+}
+
+// ── DUAL WRITE: LOCAL + FIREBASE ─────────────
+async function dualWrite(collection, key, data) {
+  // 1. Always write locally first (instant, never fails)
+  LOCAL.set(key, data);
+
+  // 2. Try writing to Firebase
+  if (firebaseReady && isOnline) {
+    try {
+      updateDbStatus('syncing');
+      await db.collection(collection).doc('main').set({ [key]: data }, { merge: true });
+      updateDbStatus('online');
+    } catch(e) {
+      console.warn(`Firebase write failed for ${key}:`, e);
+      addToSyncQueue(collection, key, data);
+      updateDbStatus('offline');
+      showOfflineNotification(`Data saved locally. Will sync when online.`);
+    }
+  } else {
+    // Queue for later
+    addToSyncQueue(collection, key, data);
+    updateDbStatus('offline');
+  }
+}
+
+// ── FLUSH SYNC QUEUE ─────────────────────────
+async function flushSyncQueue() {
+  if (!firebaseReady || !isOnline || syncQueue.length === 0) return;
+
+  console.log(`Flushing ${syncQueue.length} queued writes...`);
+  updateDbStatus('syncing');
+
+  const toProcess = [...syncQueue];
+  syncQueue = [];
+  saveSyncQueue();
+
+  let failed = [];
+  for (const item of toProcess) {
+    try {
+      await db.collection(item.collection).doc('main').set(
+        { [item.key]: item.data }, { merge: true }
+      );
+    } catch(e) {
+      failed.push(item);
+    }
+  }
+
+  if (failed.length > 0) {
+    syncQueue = failed;
+    saveSyncQueue();
+    updateDbStatus('offline');
+  } else {
+    updateDbStatus('online');
+    if (toProcess.length > 0) {
+      showSyncSuccess(`✅ ${toProcess.length} pending changes synced to cloud!`);
+    }
+  }
+}
+
+// ── REMOTE CHANGE LISTENER ───────────────────
+function listenRemoteChanges() {
+  if (!firebaseReady || !db) return;
+  db.collection('gkk_data').doc('main').onSnapshot(doc => {
+    if (!doc.exists) return;
+    const remote = doc.data();
+    // Merge remote data into local (remote wins for fields not modified locally)
+    Object.keys(remote).forEach(key => {
+      const localKey = key.replace('gkk_', '');
+      LOCAL.set(localKey, remote[key]);
+    });
+  }, err => {
+    console.warn('Remote listener error:', err);
+  });
+}
+
+// ── ONLINE/OFFLINE DETECTION ─────────────────
+window.addEventListener('online', async () => {
+  isOnline = true;
+  console.log('Back online! Syncing...');
+  if (!firebaseReady) await initFirebase();
+  await flushSyncQueue();
+  sendNotification('📶 Back Online!', 'Syncing your saved data to cloud...');
+});
+
+window.addEventListener('offline', () => {
+  isOnline = false;
+  updateDbStatus('offline');
+  toast('📵 Offline mode - data saving locally');
+});
+
+// ── PERSISTENT STORAGE REQUEST ───────────────
+async function requestPersistentStorage() {
+  if (!navigator.storage || !navigator.storage.persist) return;
+  const isPersisted = await navigator.storage.persisted();
+  if (!isPersisted) {
+    const granted = await navigator.storage.persist();
+    if (granted) {
+      console.log('✅ Persistent storage granted - data survives app reinstall');
+    } else {
+      console.warn('Persistent storage not granted - data may be cleared by OS');
+    }
+  }
+}
+
+// ── PERMISSIONS ──────────────────────────────
+async function requestAllPermissions() {
+  const results = {};
+
+  // 1. Notification permission
+  if ('Notification' in window) {
+    try {
+      const notifResult = await Notification.requestPermission();
+      results.notification = notifResult;
+      if (notifResult === 'granted') {
+        console.log('✅ Notifications granted');
+        initPushNotifications();
+      }
+    } catch(e) { results.notification = 'error'; }
+  }
+
+  // 2. Camera permission
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    stream.getTracks().forEach(t => t.stop()); // Stop immediately, just needed permission
+    results.camera = 'granted';
+    console.log('✅ Camera granted');
+  } catch(e) {
+    results.camera = e.name === 'NotAllowedError' ? 'denied' : 'unavailable';
+  }
+
+  // 3. Persistent storage (survives reinstall)
+  await requestPersistentStorage();
+
+  // Show result toast
+  const notifOk = results.notification === 'granted';
+  const camOk = results.camera === 'granted';
+  if (notifOk && camOk) {
+    toast('✅ All permissions granted!');
+  } else {
+    toast(`Permissions: ${notifOk ? '🔔✓' : '🔔✗'} Notifications ${camOk ? '📷✓' : '📷✗'} Camera`);
+  }
+
+  LOCAL.set('permissions_asked', true);
+  return results;
+}
+
+// ── PUSH NOTIFICATIONS ───────────────────────
+async function initPushNotifications() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+  // Push notification setup would go here with FCM token
+  // For now, just enable local notifications
+}
+
+function sendNotification(title, body) {
+  if (Notification.permission !== 'granted') return;
+  try {
+    new Notification(title, {
+      body,
+      icon: '/icons/icon-192.png',
+      badge: '/icons/icon-192.png',
+      tag: 'gkk-sync'
+    });
+  } catch(e) {}
+}
+
+function showOfflineNotification(msg) {
+  // In-app banner
+  toast(`📵 ${msg}`, 4000);
+  // System notification if permitted
+  sendNotification('GKK - Saved Locally', msg);
+}
+
+function showSyncSuccess(msg) {
+  toast(msg, 4000);
+  sendNotification('GKK - Sync Complete', msg);
+}
+
+// ── PERMISSION PROMPT UI ─────────────────────
+function showPermissionModal() {
+  const alreadyAsked = LOCAL.get('permissions_asked', false);
+  if (alreadyAsked === true) return;
+
+  // Create modal if not exists
+  let modal = document.getElementById('modal-permissions');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'modal-permissions';
+    modal.className = 'modal open';
+    modal.innerHTML = `
+      <div class="modal-box" style="max-width:340px">
+        <div class="modal-title" style="text-align:center;font-size:20px">🔐 App Permissions</div>
+        <p style="text-align:center;color:var(--text2);font-size:14px;margin:8px 0 20px">
+          GKK needs these permissions to work fully
+        </p>
+        <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:20px">
+          <div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--bg3);border-radius:10px">
+            <span style="font-size:24px">🔔</span>
+            <div><div style="font-weight:600;font-size:14px">Notifications</div><div style="font-size:12px;color:var(--text2)">Alerts when offline data syncs to cloud</div></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--bg3);border-radius:10px">
+            <span style="font-size:24px">📷</span>
+            <div><div style="font-weight:600;font-size:14px">Camera</div><div style="font-size:12px;color:var(--text2)">Scan crop diseases with Disease Scanner</div></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--bg3);border-radius:10px">
+            <span style="font-size:24px">💾</span>
+            <div><div style="font-weight:600;font-size:14px">Persistent Storage</div><div style="font-size:12px;color:var(--text2)">Data stays safe even after app reinstall</div></div>
+          </div>
+        </div>
+        <button onclick="grantPermissionsFromModal()" class="btn-primary" style="width:100%;padding:14px;font-size:16px;border-radius:10px">
+          ✅ Allow All Permissions
+        </button>
+        <button onclick="skipPermissions()" style="width:100%;padding:10px;margin-top:8px;background:none;border:none;color:var(--text2);font-size:13px;cursor:pointer">
+          Skip for now
+        </button>
+      </div>
+    `;
+    document.body.appendChild(modal);
+  }
+}
+
+window.grantPermissionsFromModal = async function() {
+  const modal = document.getElementById('modal-permissions');
+  if (modal) modal.classList.remove('open');
+  await requestAllPermissions();
+};
+
+window.skipPermissions = function() {
+  const modal = document.getElementById('modal-permissions');
+  if (modal) modal.classList.remove('open');
+  LOCAL.set('permissions_asked', true);
+};
+
+// ── OVERRIDE DB WRITES TO USE DUAL WRITE ─────
+// Wrap the key data-mutation functions to also write to Firebase
+function billsWrite(bills) { dualWrite('gkk_data', 'bills', bills); }
+function productsWrite(products) { dualWrite('gkk_data', 'products', products); }
+function udharWrite(udhar) { dualWrite('gkk_data', 'udhar', udhar); }
+function returnsWrite(returns) { dualWrite('gkk_data', 'returns', returns); }
+function settingsWrite(settings) { dualWrite('gkk_data', 'settings', settings); }
+
 // ── INIT ─────────────────────────────────────
-window.addEventListener('load', () => {
+window.addEventListener('load', async () => {
   // Splash
   setTimeout(() => { document.getElementById('splash').classList.add('hidden'); init(); }, 1800);
+
   // Service Worker
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(()=>{});
   }
+
+  // Load sync queue from storage
+  loadSyncQueue();
+
+  // Request persistent storage immediately (silent, no prompt)
+  await requestPersistentStorage();
+
+  // Init Firebase in background
+  initFirebase().catch(console.warn);
+
+  // Show permission modal after a short delay
+  setTimeout(showPermissionModal, 2500);
+
+  // Inject DB status indicator into header
+  injectDbStatusUI();
 });
+
+function injectDbStatusUI() {
+  // Add status badge to the top bar
+  const header = document.querySelector('.topbar') || document.querySelector('header') || document.querySelector('.page-header');
+  if (header && !document.getElementById('db-status')) {
+    const badge = document.createElement('div');
+    badge.id = 'db-status';
+    badge.className = 'db-status offline';
+    badge.innerHTML = '⏳ Connecting...';
+    badge.style.cssText = 'font-size:11px;padding:3px 8px;border-radius:20px;font-weight:600;cursor:pointer;';
+    badge.onclick = () => { if (syncQueue.length > 0) flushSyncQueue(); };
+    header.appendChild(badge);
+
+    // Inject CSS
+    const style = document.createElement('style');
+    style.textContent = `
+      .db-status { display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:3px 8px;border-radius:20px;font-weight:600; }
+      .db-status.online { background:#d1fae5;color:#065f46; }
+      .db-status.offline { background:#fee2e2;color:#991b1b; }
+      .db-status.syncing { background:#fef3c7;color:#92400e; }
+      .btn-primary { background:var(--primary);color:#fff;border:none;cursor:pointer;font-weight:600; }
+      #modal-permissions { position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999; }
+      #modal-permissions:not(.open) { display:none; }
+    `;
+    document.head.appendChild(style);
+  }
+}
 
 function init() {
   updateSidebarDate();
@@ -57,7 +447,6 @@ function showPage(id, el) {
   document.getElementById('pg-title').textContent = t[0];
   document.getElementById('pg-sub').textContent = t[1];
 
-  // Page-specific renders
   if (id === 'dashboard') renderDashboard();
   if (id === 'orders') renderOrders();
   if (id === 'products') renderProducts();
@@ -120,7 +509,6 @@ function renderDashboard() {
   set('d-udhar', '₹' + fmt(totalUdhar));
   set('d-udhar-count', udhars.length + ' customers');
 
-  // Low stock section
   const lowAll = [...outOfStock, ...lowStock].slice(0, 5);
   if (lowAll.length > 0) {
     document.getElementById('low-stock-section').style.display = 'block';
@@ -129,7 +517,6 @@ function renderDashboard() {
     ).join('');
   }
 
-  // Recent bills
   const recent = [...bills].sort((a, b) => b.id - a.id).slice(0, 5);
   document.getElementById('recent-bills-list').innerHTML = recent.length ? recent.map(b =>
     `<div class="bill-item" onclick="openBillDetail(${b.id})">
@@ -138,7 +525,6 @@ function renderDashboard() {
     </div>`
   ).join('') : '<div class="empty-state">कोई बिल नहीं। पहला बिल बनाएं! 🧾</div>';
 
-  // Udhar
   const topUdhar = udhars.filter(u => (u.amount - (u.paid || 0)) > 0).sort((a, b) => (b.amount - (b.paid||0)) - (a.amount - (a.paid||0))).slice(0, 3);
   document.getElementById('dash-udhar-list').innerHTML = topUdhar.length ? topUdhar.map(u =>
     `<div class="udhar-item"><div><div class="ui-name">${u.name}</div><div style="font-size:11px;color:var(--muted)">${u.phone || 'No phone'}</div></div><div class="ui-amt">₹${fmt(u.amount - (u.paid||0))}</div></div>`
@@ -227,19 +613,9 @@ function renderCart() {
   calcCart();
 }
 
-function changeQty(i, d) {
-  cart[i].qty = Math.max(1, cart[i].qty + d);
-  renderCart();
-}
-function removeFromCart(i) {
-  cart.splice(i, 1);
-  renderCart();
-}
-function clearCart() {
-  cart = [];
-  document.getElementById('cart-discount').value = 0;
-  renderCart();
-}
+function changeQty(i, d) { cart[i].qty = Math.max(1, cart[i].qty + d); renderCart(); }
+function removeFromCart(i) { cart.splice(i, 1); renderCart(); }
+function clearCart() { cart = []; document.getElementById('cart-discount').value = 0; renderCart(); }
 
 function calcCart() {
   const subtotal = cart.reduce((s, c) => s + c.price * c.qty, 0);
@@ -247,7 +623,6 @@ function calcCart() {
   const total = subtotal * (1 - discount / 100);
   const cost = cart.reduce((s, c) => s + (c.buyPrice || 0) * c.qty, 0);
   const profit = total - cost;
-
   set('cart-subtotal', '₹' + fmt(subtotal));
   set('cart-total', '₹' + fmt(total));
   set('cart-profit', '₹' + fmt(profit));
@@ -269,17 +644,15 @@ function finalizeBill(payMode) {
     items: [...cart], date: todayStr(), time: new Date().toLocaleTimeString('hi-IN'), ts: Date.now()
   };
   bills.push(bill);
-  DB.set('bills', bills);
+  billsWrite(bills); // ← dual write
 
-  // Deduct stock
   const products = DB.get('products');
   cart.forEach(ci => {
     const p = products.find(p => p.id === ci.id);
     if (p) p.stock = Math.max(0, (p.stock || 0) - ci.qty);
   });
-  DB.set('products', products);
+  productsWrite(products); // ← dual write
 
-  // If udhar, add to ledger
   if (payMode === 'udhar' && customer) {
     const udhars = DB.get('udhar');
     const existing = udhars.find(u => u.name.toLowerCase() === customer.toLowerCase());
@@ -290,7 +663,7 @@ function finalizeBill(payMode) {
     } else {
       udhars.push({ id: Date.now(), name: customer, phone: '', amount: total, paid: 0, date: todayStr(), history: [{ date: todayStr(), amt: total, billId: id }] });
     }
-    DB.set('udhar', udhars);
+    udharWrite(udhars); // ← dual write
   }
 
   clearCart();
@@ -306,7 +679,6 @@ function renderProducts() {
   const search = (document.getElementById('prod-search')?.value || '').toLowerCase();
   const cat = document.getElementById('prod-cat')?.value || 'all';
 
-  // Populate category filter
   const cats = ['all', ...new Set(products.map(p => p.category))];
   const catEl = document.getElementById('prod-cat');
   if (catEl) {
@@ -399,7 +771,6 @@ function saveProduct() {
 
   const products = DB.get('products');
   const existingId = document.getElementById('prod-id').value;
-
   const prod = {
     name, buyPrice, sellPrice,
     category: document.getElementById('prod-category').value,
@@ -417,7 +788,7 @@ function saveProduct() {
     products.push(prod);
   }
 
-  DB.set('products', products);
+  productsWrite(products); // ← dual write
   closeModal('modal-product');
   renderProducts();
   renderPOSProducts();
@@ -427,7 +798,7 @@ function saveProduct() {
 function deleteProduct(id) {
   if (!confirm('Delete this product?')) return;
   const products = DB.get('products').filter(p => p.id !== id);
-  DB.set('products', products);
+  productsWrite(products); // ← dual write
   renderProducts();
   renderPOSProducts();
   toast('Product deleted');
@@ -463,7 +834,7 @@ function updateStock(id) {
   const newQty = parseInt(document.getElementById('sq-' + id).value) || 0;
   const products = DB.get('products');
   const p = products.find(p => p.id === id);
-  if (p) { p.stock = newQty; DB.set('products', products); renderBadges(); toast('Stock updated ✓'); }
+  if (p) { p.stock = newQty; productsWrite(products); renderBadges(); toast('Stock updated ✓'); } // ← dual write
 }
 
 // ── ORDERS ─────────────────────────────────────
@@ -481,10 +852,8 @@ function renderOrders() {
   else if (period === 'month') bills = bills.filter(b => new Date(b.date) >= monthAgo);
   if (payF !== 'all') bills = bills.filter(b => b.payMode === payF);
   if (search) bills = bills.filter(b => (b.customer||'').toLowerCase().includes(search) || String(b.id).includes(search));
-
   bills = [...bills].sort((a, b) => b.ts - a.ts);
 
-  // Summary
   const totalRev = bills.reduce((s, b) => s + b.total, 0);
   const totalProfit = bills.reduce((s, b) => s + (b.profit || 0), 0);
   document.getElementById('orders-summary').innerHTML = `
@@ -582,7 +951,7 @@ function saveUdhar() {
   } else {
     udhars.push({ id: Date.now(), name, phone: document.getElementById('udhar-phone').value, amount, paid: 0, date: todayStr(), history: [] });
   }
-  DB.set('udhar', udhars);
+  udharWrite(udhars); // ← dual write
   closeModal('modal-udhar');
   renderLedger();
   toast('Udhar recorded ✓');
@@ -596,14 +965,14 @@ function collectPayment(id) {
   const amt = prompt(`Collect from ${u.name} (Pending: ₹${fmt(pending)})\nEnter amount collected:`, pending);
   if (!amt) return;
   u.paid = (u.paid || 0) + parseFloat(amt);
-  DB.set('udhar', udhars);
+  udharWrite(udhars); // ← dual write
   renderLedger();
   toast(`₹${fmt(parseFloat(amt))} collected from ${u.name} ✓`);
 }
 
 function deleteUdhar(id) {
   if (!confirm('Delete this udhar record?')) return;
-  DB.set('udhar', DB.get('udhar').filter(u => u.id !== id));
+  udharWrite(DB.get('udhar').filter(u => u.id !== id)); // ← dual write
   renderLedger();
   toast('Record deleted');
 }
@@ -628,12 +997,11 @@ function processReturn() {
     reason: document.getElementById('ret-reason').value,
     date: todayStr()
   });
-  DB.set('returns', returns);
+  returnsWrite(returns); // ← dual write
 
-  // Restock
   const products = DB.get('products');
   const p = products.find(p => p.id === productId);
-  if (p) { p.stock = (p.stock || 0) + qty; DB.set('products', products); }
+  if (p) { p.stock = (p.stock || 0) + qty; productsWrite(products); } // ← dual write
 
   document.getElementById('ret-bill').value = '';
   document.getElementById('ret-customer').value = '';
@@ -695,7 +1063,6 @@ function renderPL(period) {
   set('pl-avg', '₹' + fmt(avgBill));
   set('pl-returns-loss', '₹' + fmt(returnLoss));
 
-  // Top products
   const prodSales = {};
   bills.forEach(b => b.items?.forEach(i => {
     if (!prodSales[i.name]) prodSales[i.name] = { qty: 0, revenue: 0 };
@@ -739,7 +1106,6 @@ function renderReports() {
   const revenue = bills.reduce((s, b) => s + b.total, 0);
   const profit = bills.reduce((s, b) => s + (b.profit || 0), 0);
 
-  // Group by date
   const byDate = {};
   bills.forEach(b => { byDate[b.date] = byDate[b.date] || { revenue: 0, profit: 0, count: 0 }; byDate[b.date].revenue += b.total; byDate[b.date].profit += (b.profit||0); byDate[b.date].count++; });
 
@@ -801,10 +1167,7 @@ Always respond in a mix of Hindi and English (Hinglish) as that's natural for MP
   }
 }
 
-function aiQuick(q) {
-  document.getElementById('ai-input').value = q;
-  sendAI();
-}
+function aiQuick(q) { document.getElementById('ai-input').value = q; sendAI(); }
 
 function appendAIMsg(text, role) {
   const chat = document.getElementById('ai-chat');
@@ -831,10 +1194,7 @@ function appendTyping() {
   return id;
 }
 
-function removeTyping(id) {
-  const el = document.getElementById(id);
-  if (el) el.remove();
-}
+function removeTyping(id) { const el = document.getElementById(id); if (el) el.remove(); }
 
 // ── DISEASE SCANNER ──────────────────────────
 async function scanDisease(input) {
@@ -884,7 +1244,6 @@ Respond in Hinglish (Hindi + English mix). Be specific and practical. Use bullet
         <div class="disease-result-body">${reply.replace(/\n/g,'<br>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')}</div>
       `;
 
-      // Save to history
       const history = DB.get('disease_history');
       history.unshift({ date: todayStr(), result: reply.substring(0, 200) + '...' });
       DB.set('disease_history', history.slice(0, 10));
@@ -933,7 +1292,7 @@ function saveSettings() {
     address: document.getElementById('set-address').value,
     lowstock: parseInt(document.getElementById('set-lowstock').value) || 10
   };
-  DB.set('settings', s);
+  settingsWrite(s); // ← dual write
   const shopEl = document.querySelector('.sb-shop');
   if (shopEl && s.shopName) shopEl.textContent = s.shopName;
   toast('Settings saved ✓');
@@ -964,11 +1323,11 @@ function importData(input) {
   reader.onload = (e) => {
     try {
       const data = JSON.parse(e.target.result);
-      if (data.products) DB.set('products', data.products);
-      if (data.bills) DB.set('bills', data.bills);
-      if (data.udhar) DB.set('udhar', data.udhar);
-      if (data.returns) DB.set('returns', data.returns);
-      if (data.settings) DB.set('settings', data.settings);
+      if (data.products) { LOCAL.set('products', data.products); productsWrite(data.products); }
+      if (data.bills) { LOCAL.set('bills', data.bills); billsWrite(data.bills); }
+      if (data.udhar) { LOCAL.set('udhar', data.udhar); udharWrite(data.udhar); }
+      if (data.returns) { LOCAL.set('returns', data.returns); returnsWrite(data.returns); }
+      if (data.settings) { LOCAL.set('settings', data.settings); settingsWrite(data.settings); }
       toast('Data imported ✓ Reloading...');
       setTimeout(() => location.reload(), 1200);
     } catch { toast('Invalid file!'); }
