@@ -38,7 +38,6 @@ jobs:
           echo "e9acab5b5fbb560a72cfaecce8946896ff6aab9d" > "$ANDROID_SDK_ROOT/licenses/android-googletv-license"
           echo "601085b94cd77f0b54ff86406957099ebe79c4d" > "$ANDROID_SDK_ROOT/licenses/android-sdk-arm-dbt-license"
           echo "859f317696f67ef3d7f30a50a5560e7834b43903" > "$ANDROID_SDK_ROOT/licenses/android-sdk-extra-license"
-          echo "Licenses accepted."
 
       - name: Install dependencies
         run: npm ci
@@ -61,6 +60,57 @@ jobs:
           npx cap add android 2>/dev/null || true
           npx cap sync android
 
+      # ── PATCH AndroidManifest.xml with all required permissions ──────────
+      - name: Patch AndroidManifest.xml permissions
+        run: |
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          python3 - << 'PYEOF'
+          import re
+
+          with open("android/app/src/main/AndroidManifest.xml", "r") as f:
+              content = f.read()
+
+          permissions = [
+              # Camera
+              '<uses-permission android:name="android.permission.CAMERA" />',
+              '<uses-feature android:name="android.hardware.camera" android:required="false" />',
+              # Notifications (Android 13+)
+              '<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />',
+              # Storage (read/write for Android < 13)
+              '<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />',
+              '<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />',
+              # Media access for Android 13+
+              '<uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />',
+              # Network (for Firebase sync)
+              '<uses-permission android:name="android.permission.INTERNET" />',
+              '<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />',
+              # Vibration (for notifications)
+              '<uses-permission android:name="android.permission.VIBRATE" />',
+          ]
+
+          # Insert all missing permissions before <application tag
+          insert_before = '<application'
+          for perm in permissions:
+              tag_name = re.search(r'android:name="([^"]+)"', perm)
+              if tag_name and tag_name.group(1) not in content:
+                  content = content.replace(insert_before, perm + '\n    ' + insert_before)
+
+          with open("android/app/src/main/AndroidManifest.xml", "w") as f:
+              f.write(content)
+
+          print("AndroidManifest.xml patched with permissions:")
+          for p in permissions:
+              name = re.search(r'android:name="([^"]+)"', p)
+              if name: print(f"  ✓ {name.group(1)}")
+          PYEOF
+
+      # ── Show final manifest for verification ────────────────────────────
+      - name: Show AndroidManifest.xml
+        run: |
+          echo "=== AndroidManifest.xml ==="
+          grep -E "uses-permission|uses-feature" android/app/src/main/AndroidManifest.xml
+
+      # ── Stable keystore (same key every build = no reinstall conflict) ───
       - name: Create stable debug keystore
         run: |
           keytool -genkeypair \
@@ -83,7 +133,6 @@ jobs:
           with open("build.gradle", "r") as f:
               content = f.read()
 
-          # Only inject if not already present
           if "stableDebug" not in content:
               signing_block = """
               signingConfigs {
