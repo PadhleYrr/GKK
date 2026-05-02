@@ -2023,9 +2023,22 @@ tr:hover td { background: var(--bg3); }
         <div id="ai-lookup-result" style="display:none;margin-top:10px;padding:10px;background:var(--bg2);border-radius:8px;font-size:12px;color:var(--text2);line-height:1.6"></div>
       </div>
 
-      <!-- Product Image preview from AI -->
-      <div id="p-image-wrap" style="display:none;margin-bottom:12px;text-align:center">
-        <img id="p-image-preview" style="width:80px;height:80px;object-fit:contain;border-radius:10px;border:1px solid var(--border)" alt="product">
+      <!-- Product Image (AI preview OR manual upload) -->
+      <div style="margin-bottom:14px">
+        <label class="form-label">📸 Product Image <span style="color:var(--text3);font-weight:400">(Optional)</span></label>
+        <div id="p-image-wrap" style="display:flex;flex-direction:column;align-items:center;gap:8px">
+          <!-- Preview box -->
+          <div id="p-img-preview-box" style="width:90px;height:90px;border-radius:12px;border:2px dashed var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;background:var(--bg2);overflow:hidden;position:relative" onclick="document.getElementById('p-img-upload').click()">
+            <img id="p-image-preview" style="width:100%;height:100%;object-fit:cover;display:none;border-radius:10px" alt="product">
+            <div id="p-img-placeholder" style="text-align:center;color:var(--text3)">
+              <div style="font-size:24px">📷</div>
+              <div style="font-size:10px;margin-top:2px">Tap to add</div>
+            </div>
+            <button id="p-img-remove-btn" onclick="removeProductImage(event)" style="display:none;position:absolute;top:4px;right:4px;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:11px;cursor:pointer;line-height:20px;text-align:center">✕</button>
+          </div>
+          <input type="file" id="p-img-upload" accept="image/*" style="display:none" onchange="handleProductImageUpload(event)">
+          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('p-img-upload').click()" style="font-size:12px">📁 Choose Photo</button>
+        </div>
       </div>
 
       <div class="form-group">
@@ -2374,11 +2387,55 @@ function updateProductMargin() {
   } else m.textContent = '';
 }
 
+// ── PRODUCT IMAGE HANDLERS ──────────────────────────────────────────
+function handleProductImageUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  // Compress image to keep localStorage size manageable
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      // Max 300px wide — enough for display, small for storage
+      const maxW = 300;
+      const scale = Math.min(1, maxW / img.width);
+      canvas.width = img.width * scale;
+      canvas.height = img.height * scale;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const compressed = canvas.toDataURL('image/jpeg', 0.7);
+      // Show preview
+      const prevImg = document.getElementById('p-image-preview');
+      prevImg.src = compressed;
+      prevImg.style.display = 'block';
+      document.getElementById('p-img-placeholder').style.display = 'none';
+      document.getElementById('p-img-remove-btn').style.display = 'flex';
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function removeProductImage(event) {
+  event.stopPropagation();
+  const prevImg = document.getElementById('p-image-preview');
+  prevImg.src = '';
+  prevImg.style.display = 'none';
+  document.getElementById('p-img-placeholder').style.display = 'flex';
+  document.getElementById('p-img-remove-btn').style.display = 'none';
+  document.getElementById('p-img-upload').value = '';
+}
+
 function saveProduct() {
   const name = document.getElementById('p-name').value.trim();
   const buy = parseFloat(document.getElementById('p-buy').value);
   const sell = parseFloat(document.getElementById('p-sell').value);
   if (!name || !buy || !sell) { showToast('Please fill required fields', '⚠️'); return; }
+  // Get image if uploaded
+  const imgEl = document.getElementById('p-image-preview');
+  const imageData = (imgEl && imgEl.src && imgEl.style.display !== 'none' && imgEl.src.startsWith('data:')) ? imgEl.src : '';
+
   const product = {
     id: Date.now().toString(),
     name, category: document.getElementById('p-cat').value,
@@ -2388,6 +2445,7 @@ function saveProduct() {
     company: document.getElementById('p-company').value.trim(),
     notes: document.getElementById('p-notes').value.trim(),
     itemCode: document.getElementById('p-itemcode').value.trim(),
+    image: imageData,
     createdAt: new Date().toISOString()
   };
   db.products.push(product);
@@ -2395,10 +2453,15 @@ function saveProduct() {
   closeModal('add-product-modal');
   ['p-name','p-buy','p-sell','p-stock','p-company','p-notes','p-itemcode','p-barcode'].forEach(id => { const el = document.getElementById(id); if(el) el.value=''; });
   document.getElementById('ai-lookup-result').style.display = 'none';
-  document.getElementById('p-image-wrap').style.display = 'none';
-  document.getElementById('p-image-preview').src = '';
+  // Reset image preview
+  const prevImg = document.getElementById('p-image-preview');
+  if (prevImg) { prevImg.src = ''; prevImg.style.display = 'none'; }
+  const placeholder = document.getElementById('p-img-placeholder');
+  if (placeholder) placeholder.style.display = 'flex';
+  const removeBtn = document.getElementById('p-img-remove-btn');
+  if (removeBtn) removeBtn.style.display = 'none';
   renderProducts(); renderStock(); renderBillProducts(); refreshDashboard();
-  showToast('Product added!');
+  showToast('Product added! 📦');
 }
 
 // ==================== BARCODE + AI PRODUCT LOOKUP ====================
@@ -2901,32 +2964,63 @@ function clearChatHistory() {
 
 // ==================== AI REORDER SUGGESTIONS ====================
 async function getReorderSuggestions() {
-  const key = db.settings.geminiKey;
-  if (!key) { showToast('Add Gemini API key in Settings', '⚠️'); return; }
+  const key = db.settings.groqKey;
+  if (!key) { showToast('Add Groq API key in Settings first ⚙️', '⚠️'); return; }
   const lowStock = db.products.filter(p => p.stock <= (db.settings.lowStockLevel || 5));
   if (!lowStock.length) {
     document.getElementById('reorder-suggestions').innerHTML = '✅ All products are well stocked! No reorder needed.';
     return;
   }
   const el = document.getElementById('reorder-suggestions');
-  el.innerHTML = '🤖 Generating suggestions...';
+  el.innerHTML = '<div style="display:flex;align-items:center;gap:8px;color:var(--text2);font-size:13px"><div class="spinner" style="width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin 0.8s linear infinite"></div> ⚡ Groq AI analyzing stock...</div>';
 
-  const productList = lowStock.map(p => `${p.name} (${p.stock} ${p.unit} left, category: ${p.category})`).join('\n');
+  const month = new Date().toLocaleString('en', {month: 'long'});
+  const productList = lowStock.map(p =>
+    `• ${p.name} | Stock: ${p.stock} ${p.unit} | Category: ${p.category} | Sell Price: ₹${p.sellPrice}`
+  ).join('
+');
+
   try {
-    const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`, {
+    const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${key}`
+      },
       body: JSON.stringify({
-        contents: [{ role:'user', parts:[{ text: `You are an agricultural shop advisor. These products are low in stock:\n${productList}\n\nProvide brief reorder suggestions: recommended quantity to reorder, urgency (High/Medium/Low) based on season (current month: ${new Date().toLocaleString('en',{month:'long'})}), and any seasonal demand tip. Keep it concise, practical, in Hinglish. Format as bullet points.` }] }],
-        generationConfig: { maxOutputTokens: 400 }
+        model: 'llama-3.3-70b-versatile',
+        max_tokens: 500,
+        messages: [{
+          role: 'system',
+          content: 'You are an expert agricultural shop advisor for a shop in Madhya Pradesh, India. Give reorder suggestions in Hinglish (Hindi+English mix). Be practical and specific. Use bullet points with emojis.'
+        }, {
+          role: 'user',
+          content: `Current month: ${month}
+
+Low stock products:
+${productList}
+
+For each product give:
+🔴/🟡/🟢 Urgency | Suggested reorder qty | Reason (seasonal demand, usage rate)
+
+Also add 1 seasonal tip for this month for MP farmers.`
+        }]
       })
     });
     const data = await resp.json();
     if (data.error) throw new Error(data.error.message);
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No suggestions.';
-    el.innerHTML = `<div style="font-size:12.5px;line-height:1.7;white-space:pre-wrap">${text}</div>`;
+    const text = data.choices?.[0]?.message?.content || 'No suggestions.';
+    // Format nicely
+    const formatted = text
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/
+/g, '<br>');
+    el.innerHTML = `
+      <div style="font-size:12.5px;line-height:1.9">${formatted}</div>
+      <div style="font-size:10px;color:var(--text3);margin-top:8px;text-align:right">⚡ Powered by Groq AI (llama-3.3-70b)</div>
+    `;
   } catch(e) {
-    el.innerHTML = `<span style="color:var(--danger)">Error: ${e.message}</span>`;
+    el.innerHTML = `<span style="color:var(--danger)">❌ Error: ${e.message}</span>`;
   }
 }
 
@@ -2943,7 +3037,15 @@ function renderProducts() {
   grid.innerHTML = prods.map(p => {
     const low = p.stock <= db.settings.lowStockLevel && p.stock > 0;
     const out = p.stock === 0;
+    const imgHtml = p.image
+      ? `<div style="width:100%;height:80px;border-radius:8px;overflow:hidden;margin-bottom:8px;background:var(--bg2)">
+           <img src="${p.image}" style="width:100%;height:100%;object-fit:cover" alt="${p.name}" onerror="this.parentElement.style.display='none'">
+         </div>`
+      : `<div style="width:100%;height:56px;border-radius:8px;background:var(--bg2);display:flex;align-items:center;justify-content:center;margin-bottom:8px;font-size:26px">
+           ${ p.category.includes('Seed') ? '🌾' : p.category.includes('Fertil') ? '🧪' : p.category.includes('Pestic') ? '🐛' : p.category.includes('Herb') ? '🌿' : p.category.includes('Tool') ? '🔧' : p.category.includes('Irrig') ? '💧' : '📦' }
+         </div>`;
     return `<div class="product-card${out?' out-of-stock':''}">
+      ${imgHtml}
       <div class="product-cat">${p.category}</div>
       <div class="product-name">${p.name}</div>
       ${p.company ? `<div style="font-size:11px;color:var(--text3);margin-bottom:4px">${p.company}</div>` : ''}
