@@ -260,6 +260,7 @@ async function requestAllPermissions() {
   }
 
   LOCAL.set('permissions_asked', true);
+  localStorage.setItem('gkk_permissions_asked', 'true');
   return results;
 }
 
@@ -296,57 +297,148 @@ function showSyncSuccess(msg) {
 
 // ── PERMISSION PROMPT UI ─────────────────────
 function showPermissionModal() {
-  const alreadyAsked = LOCAL.get('permissions_asked', false);
-  if (alreadyAsked === true) return;
+  const alreadyAsked = localStorage.getItem('gkk_permissions_asked');
+  if (alreadyAsked === 'true') return;
 
-  // Create modal if not exists
-  let modal = document.getElementById('modal-permissions');
-  if (!modal) {
-    modal = document.createElement('div');
-    modal.id = 'modal-permissions';
-    modal.className = 'modal open';
-    modal.innerHTML = `
-      <div class="modal-box" style="max-width:340px">
-        <div class="modal-title" style="text-align:center;font-size:20px">🔐 App Permissions</div>
-        <p style="text-align:center;color:var(--text2);font-size:14px;margin:8px 0 20px">
-          GKK needs these permissions to work fully
-        </p>
-        <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:20px">
-          <div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--bg3);border-radius:10px">
-            <span style="font-size:24px">🔔</span>
-            <div><div style="font-weight:600;font-size:14px">Notifications</div><div style="font-size:12px;color:var(--text2)">Alerts when offline data syncs to cloud</div></div>
-          </div>
-          <div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--bg3);border-radius:10px">
-            <span style="font-size:24px">📷</span>
-            <div><div style="font-weight:600;font-size:14px">Camera</div><div style="font-size:12px;color:var(--text2)">Scan crop diseases with Disease Scanner</div></div>
-          </div>
-          <div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--bg3);border-radius:10px">
-            <span style="font-size:24px">💾</span>
-            <div><div style="font-weight:600;font-size:14px">Persistent Storage</div><div style="font-size:12px;color:var(--text2)">Data stays safe even after app reinstall</div></div>
-          </div>
-        </div>
-        <button onclick="grantPermissionsFromModal()" class="btn-primary" style="width:100%;padding:14px;font-size:16px;border-radius:10px">
-          ✅ Allow All Permissions
-        </button>
-        <button onclick="skipPermissions()" style="width:100%;padding:10px;margin-top:8px;background:none;border:none;color:var(--text2);font-size:13px;cursor:pointer">
-          Skip for now
-        </button>
+  // Remove any existing modal first
+  const existing = document.getElementById('modal-permissions');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'modal-permissions';
+  modal.style.cssText = `
+    position:fixed;inset:0;background:rgba(0,0,0,0.75);
+    display:flex;align-items:center;justify-content:center;
+    z-index:99999;padding:20px;box-sizing:border-box;
+  `;
+  modal.innerHTML = `
+    <div style="
+      background:#fff;border-radius:20px;padding:28px 24px;
+      max-width:360px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.4);
+    ">
+      <div style="text-align:center;margin-bottom:6px;font-size:40px">🔐</div>
+      <div style="text-align:center;font-size:20px;font-weight:800;color:#1a1a2e;margin-bottom:6px">
+        App Permissions
       </div>
-    `;
-    document.body.appendChild(modal);
-  }
+      <div style="text-align:center;color:#6b7280;font-size:13px;margin-bottom:20px">
+        GKK को ये permissions चाहिए
+      </div>
+
+      <div id="perm-list" style="display:flex;flex-direction:column;gap:10px;margin-bottom:22px">
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:#f8f9fc;border-radius:12px;border:1.5px solid #e5e7eb">
+          <span style="font-size:26px">🔔</span>
+          <div style="flex:1">
+            <div style="font-weight:700;font-size:14px;color:#1a1a2e">Notifications</div>
+            <div style="font-size:12px;color:#6b7280">Offline sync alerts & reminders</div>
+          </div>
+          <span id="perm-notif-status" style="font-size:18px">⏳</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:#f8f9fc;border-radius:12px;border:1.5px solid #e5e7eb">
+          <span style="font-size:26px">📷</span>
+          <div style="flex:1">
+            <div style="font-weight:700;font-size:14px;color:#1a1a2e">Camera</div>
+            <div style="font-size:12px;color:#6b7280">Disease Scanner के लिए</div>
+          </div>
+          <span id="perm-cam-status" style="font-size:18px">⏳</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:#f8f9fc;border-radius:12px;border:1.5px solid #e5e7eb">
+          <span style="font-size:26px">💾</span>
+          <div style="flex:1">
+            <div style="font-weight:700;font-size:14px;color:#1a1a2e">Storage</div>
+            <div style="font-size:12px;color:#6b7280">Data reinstall के बाद भी सुरक्षित रहे</div>
+          </div>
+          <span id="perm-store-status" style="font-size:18px">⏳</span>
+        </div>
+      </div>
+
+      <button id="perm-grant-btn" onclick="grantPermissionsFromModal()" style="
+        width:100%;padding:15px;background:linear-gradient(135deg,#6c63ff,#4a42cc);
+        color:#fff;border:none;border-radius:12px;font-size:16px;
+        font-weight:700;cursor:pointer;letter-spacing:0.3px;
+      ">
+        ✅ Allow All Permissions
+      </button>
+      <button onclick="skipPermissions()" style="
+        width:100%;padding:10px;margin-top:8px;background:none;
+        border:none;color:#9ca3af;font-size:13px;cursor:pointer;
+      ">
+        बाद में (Skip for now)
+      </button>
+    </div>
+  `;
+  document.body.appendChild(modal);
 }
 
 window.grantPermissionsFromModal = async function() {
-  const modal = document.getElementById('modal-permissions');
-  if (modal) modal.classList.remove('open');
-  await requestAllPermissions();
+  const btn = document.getElementById('perm-grant-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Requesting...'; }
+
+  // Request each permission one at a time, updating status icons live
+
+  // 1. Notifications
+  try {
+    let notifResult = 'denied';
+    // Try Capacitor native first (Android app)
+    if (window.Capacitor?.Plugins?.LocalNotifications) {
+      const r = await window.Capacitor.Plugins.LocalNotifications.requestPermissions();
+      notifResult = r.display === 'granted' ? 'granted' : 'denied';
+    } else if ('Notification' in window) {
+      notifResult = await Notification.requestPermission();
+    }
+    const el = document.getElementById('perm-notif-status');
+    if (el) el.textContent = notifResult === 'granted' ? '✅' : '❌';
+  } catch(e) {
+    const el = document.getElementById('perm-notif-status');
+    if (el) el.textContent = '❌';
+  }
+
+  // 2. Camera
+  try {
+    let camGranted = false;
+    // Try Capacitor native first
+    if (window.Capacitor?.Plugins?.Camera) {
+      const r = await window.Capacitor.Plugins.Camera.requestPermissions({ permissions: ['camera'] });
+      camGranted = r.camera === 'granted';
+    } else if (navigator.mediaDevices?.getUserMedia) {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      stream.getTracks().forEach(t => t.stop());
+      camGranted = true;
+    }
+    const el = document.getElementById('perm-cam-status');
+    if (el) el.textContent = camGranted ? '✅' : '❌';
+  } catch(e) {
+    const el = document.getElementById('perm-cam-status');
+    if (el) el.textContent = '❌';
+  }
+
+  // 3. Storage persistence
+  try {
+    let stored = false;
+    if (navigator.storage?.persist) {
+      stored = await navigator.storage.persist();
+    }
+    const el = document.getElementById('perm-store-status');
+    if (el) el.textContent = stored ? '✅' : '⚠️';
+  } catch(e) {
+    const el = document.getElementById('perm-store-status');
+    if (el) el.textContent = '⚠️';
+  }
+
+  localStorage.setItem('gkk_permissions_asked', 'true');
+
+  // Wait a moment so user sees the results, then close
+  if (btn) { btn.textContent = '✅ Done! Closing...'; }
+  setTimeout(() => {
+    const modal = document.getElementById('modal-permissions');
+    if (modal) modal.remove();
+    toast('Permissions set! App is ready. 🚀');
+  }, 1200);
 };
 
 window.skipPermissions = function() {
   const modal = document.getElementById('modal-permissions');
   if (modal) modal.classList.remove('open');
-  LOCAL.set('permissions_asked', true);
+  localStorage.setItem('gkk_permissions_asked', 'true');
 };
 
 // ── OVERRIDE DB WRITES TO USE DUAL WRITE ─────
@@ -376,11 +468,15 @@ window.addEventListener('load', async () => {
   // Init Firebase in background
   initFirebase().catch(console.warn);
 
-  // Show permission modal after a short delay
-  setTimeout(showPermissionModal, 2500);
-
   // Inject DB status indicator into header
   injectDbStatusUI();
+
+  // Show permission modal after splash finishes
+  // Also hook into Capacitor deviceready for native Android
+  if (window.Capacitor) {
+    document.addEventListener('deviceready', () => setTimeout(showPermissionModal, 500), false);
+  }
+  setTimeout(showPermissionModal, 2000);
 });
 
 function injectDbStatusUI() {
