@@ -2977,8 +2977,7 @@ async function getReorderSuggestions() {
   const month = new Date().toLocaleString('en', {month: 'long'});
   const productList = lowStock.map(p =>
     `• ${p.name} | Stock: ${p.stock} ${p.unit} | Category: ${p.category} | Sell Price: ₹${p.sellPrice}`
-  ).join('
-');
+  ).join('\n');
 
   try {
     const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -3013,8 +3012,7 @@ Also add 1 seasonal tip for this month for MP farmers.`
     // Format nicely
     const formatted = text
       .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-      .replace(/
-/g, '<br>');
+      .replace(/\n/g, '<br>');
     el.innerHTML = `
       <div style="font-size:12.5px;line-height:1.9">${formatted}</div>
       <div style="font-size:10px;color:var(--text3);margin-top:8px;text-align:right">⚡ Powered by Groq AI (llama-3.3-70b)</div>
