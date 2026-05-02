@@ -1,28 +1,14 @@
-name: Build Signed GKK App (Android + iOS)
+name: Build GKK App (Android APK)
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      platform:
-        description: 'Platform to build'
-        required: true
-        default: 'both'
-        type: choice
-        options:
-          - both
-          - android
-          - ios
 
 jobs:
-  # ─────────────────────────────────────────
-  # ANDROID — Signed APK + AAB
-  # ─────────────────────────────────────────
   build-android:
-    name: 🤖 Build Android (Signed APK + AAB)
+    name: 🤖 Build Android APK
     runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.platform == 'android' || github.event.inputs.platform == 'both' || github.event_name == 'push' }}
 
     steps:
       - name: Checkout code
@@ -31,7 +17,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Setup Java (JDK 17)
@@ -46,7 +32,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Copy web files into www/ folder (Capacitor's webDir)
       - name: Prepare web assets
         run: |
           mkdir -p www
@@ -55,135 +40,92 @@ jobs:
           cp style.css www/
           cp sw.js www/
           cp manifest.json www/
-          # Copy icons if they exist
           [ -d icons ] && cp -r icons www/ || true
 
       - name: Install Capacitor CLI
         run: npm install -g @capacitor/cli
 
-      - name: Add Android platform
+      - name: Add & sync Android platform
         run: |
-          npx cap add android || echo "Android platform already added"
+          npx cap add android 2>/dev/null || true
           npx cap sync android
 
-      # Decode the keystore from base64 secret
-      - name: Decode Android Keystore
+      # ── Use a fixed debug keystore so the app signature never changes ──
+      # This means reinstalls and updates will NEVER conflict
+      - name: Create stable debug keystore
         run: |
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/gkk-release.keystore
+          mkdir -p android/app
+          keytool -genkeypair \
+            -keystore android/app/debug.keystore \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=GKK Debug, OU=Android, O=GKK, L=Indore, S=MP, C=IN" \
+            2>/dev/null || true
 
-      # Build signed APK
-      - name: Build Signed APK
+      - name: Inject stable signing into build.gradle
+        working-directory: android/app
+        run: |
+          # Add signingConfigs block and wire it to both buildTypes
+          python3 - << 'PYEOF'
+          import re
+
+          with open("build.gradle", "r") as f:
+              content = f.read()
+
+          signing_block = """
+              signingConfigs {
+                  stableDebug {
+                      storeFile file("debug.keystore")
+                      storePassword "android"
+                      keyAlias "androiddebugkey"
+                      keyPassword "android"
+                  }
+              }
+          """
+
+          # Insert signingConfigs before buildTypes
+          content = content.replace(
+              "    buildTypes {",
+              signing_block + "    buildTypes {"
+          )
+
+          # Wire all buildTypes to use stableDebug signing
+          content = re.sub(
+              r'(buildTypes \{[^}]*)(release\s*\{)',
+              r'\1release {\n            signingConfig signingConfigs.stableDebug',
+              content
+          )
+          content = re.sub(
+              r'(buildTypes \{[^}]*)(debug\s*\{)',
+              r'\1debug {\n            signingConfig signingConfigs.stableDebug',
+              content
+          )
+
+          with open("build.gradle", "w") as f:
+              f.write(content)
+
+          print("build.gradle patched successfully")
+          PYEOF
+
+      - name: Build APK
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease \
-            -Pandroid.injected.signing.store.file=gkk-release.keystore \
-            -Pandroid.injected.signing.store.password="${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
-            -Pandroid.injected.signing.key.alias="${{ secrets.ANDROID_KEY_ALIAS }}" \
-            -Pandroid.injected.signing.key.password="${{ secrets.ANDROID_KEY_PASSWORD }}"
+          ./gradlew assembleRelease --no-daemon
 
-      # Build signed AAB (for Play Store)
-      - name: Build Signed AAB (Play Store)
-        working-directory: android
+      - name: Collect & rename APK
         run: |
-          ./gradlew bundleRelease \
-            -Pandroid.injected.signing.store.file=gkk-release.keystore \
-            -Pandroid.injected.signing.store.password="${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
-            -Pandroid.injected.signing.key.alias="${{ secrets.ANDROID_KEY_ALIAS }}" \
-            -Pandroid.injected.signing.key.password="${{ secrets.ANDROID_KEY_PASSWORD }}"
+          mkdir -p output
+          find android/app/build/outputs/apk -name "*.apk" -exec cp {} output/GKK-latest.apk \;
+          ls -lh output/
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: GKK-release-signed.apk
-          path: android/app/build/outputs/apk/release/*.apk
-          retention-days: 30
-
-      - name: Upload AAB artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: GKK-release-signed.aab
-          path: android/app/build/outputs/bundle/release/*.aab
-          retention-days: 30
-
-  # ─────────────────────────────────────────
-  # iOS — Signed IPA via Fastlane
-  # ─────────────────────────────────────────
-  build-ios:
-    name: 🍎 Build iOS (Signed IPA)
-    runs-on: macos-14
-    if: ${{ github.event.inputs.platform == 'ios' || github.event.inputs.platform == 'both' || github.event_name == 'push' }}
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Prepare web assets
-        run: |
-          mkdir -p www
-          cp index.html www/
-          cp app.js www/
-          cp style.css www/
-          cp sw.js www/
-          cp manifest.json www/
-          [ -d icons ] && cp -r icons www/ || true
-
-      - name: Install Capacitor CLI
-        run: npm install -g @capacitor/cli
-
-      - name: Add iOS platform
-        run: |
-          npx cap add ios || echo "iOS platform already added"
-          npx cap sync ios
-
-      - name: Setup Ruby
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: '3.2'
-          bundler-cache: true
-
-      - name: Install Fastlane
-        run: gem install fastlane
-
-      # Decode App Store Connect API key from secret
-      - name: Setup App Store Connect API Key
-        run: |
-          mkdir -p ~/.appstoreconnect/private_keys
-          echo "${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}" > ~/.appstoreconnect/private_keys/AuthKey_${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8
-
-      # Use Fastlane match for automatic certificate + provisioning profile management
-      - name: Install provisioning profile & cert via Fastlane Match
-        env:
-          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
-          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
-        run: |
-          cd ios/App
-          fastlane match appstore \
-            --git_url "${{ secrets.MATCH_GIT_URL }}" \
-            --app_identifier "com.gkk.app" \
-            --readonly true \
-            --api_key_path ~/.appstoreconnect/private_keys/AuthKey_${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8
-
-      - name: Build & Export IPA via Fastlane
-        env:
-          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
-          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
-        run: |
-          cd ios/App
-          fastlane build_ipa
-
-      - name: Upload IPA artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: GKK-release-signed.ipa
-          path: ios/App/GKK.ipa
+          name: GKK-latest.apk
+          path: output/GKK-latest.apk
           retention-days: 30
