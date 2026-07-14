@@ -1912,6 +1912,42 @@ tr:hover td { background: var(--bg3); }
     </div>
 
     <div class="settings-section">
+      <div class="settings-section-title">Telegram Bot Sync</div>
+      <div class="settings-card">
+        <div class="settings-row">
+          <div><div class="settings-row-label">Status</div></div>
+          <div id="tg-status" style="font-size:13px;color:var(--text-secondary)">⚪ Not configured</div>
+        </div>
+        <div class="settings-row">
+          <div><div class="settings-row-label">Bot Token</div><div class="settings-row-desc">From @BotFather</div></div>
+          <input class="form-input" id="tg-token-input" type="password" placeholder="123456:ABC-DEF..." style="max-width:220px">
+        </div>
+        <div class="settings-row">
+          <div><div class="settings-row-label">Channel / Chat ID</div><div class="settings-row-desc">Where data gets mirrored</div></div>
+          <input class="form-input" id="tg-chatid-input" placeholder="-1001234567890" style="max-width:220px">
+        </div>
+        <div class="settings-row">
+          <div><div class="settings-row-label">Admin ID</div><div class="settings-row-desc">Only this user can run /export /import</div></div>
+          <input class="form-input" id="tg-adminid-input" placeholder="5488677608" style="max-width:220px">
+        </div>
+        <div class="settings-row">
+          <div><div class="settings-row-label">Enable Telegram Sync</div><div class="settings-row-desc">Mirrors every table live to the channel</div></div>
+          <input type="checkbox" id="tg-enabled-toggle" style="width:20px;height:20px">
+        </div>
+        <div class="settings-row" style="justify-content:flex-end;gap:8px">
+          <button class="btn btn-outline btn-sm" onclick="testTelegramConnection()">🔌 Test</button>
+          <button class="btn btn-outline btn-sm" onclick="telegramBackupNow()">📦 Backup Now</button>
+          <button class="btn btn-primary" onclick="saveTelegramSettings()">Save</button>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-desc" style="font-size:12px;line-height:1.5">
+            In Telegram, message <b>/export</b> to get a full backup file, or <b>/import</b> then send a .json file to restore. Commands only work while the app is open in a tab (GKK has no background server). Every save is also mirrored live as an editable message per table — so the channel stays a working copy of your data even if Firestore is down.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-section">
       <div class="settings-section-title">About</div>
       <div class="settings-card">
         <div class="settings-row"><div><div class="settings-row-label">🌿 GKK — Gumasta Krishi Kendra</div><div class="settings-row-desc">Version 3.0 | PWA App</div></div><span class="badge badge-success">Active</span></div>
