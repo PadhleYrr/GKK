@@ -118,12 +118,190 @@ function updateDbStatus(status) {
   }
 }
 
-// ── DUAL WRITE: LOCAL + FIREBASE ─────────────
+// ═══════════════════════════════════════════
+// TELEGRAM BOT SYNC (parallel "row" storage)
+// Every table (products/bills/udhar/returns/settings)
+// lives as ONE Telegram message that gets EDITED in
+// place on every save — so it behaves like a live DB
+// row, independent of whether Firestore is working.
+// ═══════════════════════════════════════════
+let tgOffset = 0;
+let TG_POLLING = false;
+let tgAwaitingImportFrom = null; // chatId waiting to receive an import file
+
+function tgSettings() {
+  return DB.getObj('telegram', { token: '', chatId: '', adminId: '5488677608', enabled: false });
+}
+function tgSaveSettings(s) { LOCAL.set('telegram', s); }
+function tgMsgMap() { return DB.getObj('telegram_msgmap', {}); }
+function tgSaveMsgMap(m) { LOCAL.set('telegram_msgmap', m); }
+
+async function tgApi(method, params, isForm) {
+  const cfg = tgSettings();
+  if (!cfg.token) throw new Error('No Telegram bot token configured');
+  const url = `https://api.telegram.org/bot${cfg.token}/${method}`;
+  const res = await fetch(url, isForm
+    ? { method: 'POST', body: params }
+    : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(params) });
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.description || 'Telegram API error');
+  return data.result;
+}
+
+async function tgTestConnection() {
+  try {
+    const me = await tgApi('getMe', {});
+    toast(`✅ Connected as @${me.username}`);
+    return true;
+  } catch(e) {
+    toast('❌ Telegram connection failed: ' + e.message);
+    return false;
+  }
+}
+
+// Send/edit ONE message per table key, holding that table's full JSON.
+async function tgMirrorWrite(key, data) {
+  const cfg = tgSettings();
+  if (!cfg.enabled || !cfg.token || !cfg.chatId) return;
+  const payload = JSON.stringify(data, null, 2);
+  const map = tgMsgMap();
+  const count = Array.isArray(data) ? data.length : Object.keys(data || {}).length;
+  const header = `📦 GKK Table: ${key}\nUpdated: ${new Date().toISOString()}\nRecords: ${count}`;
+  try {
+    if (payload.length < 3500) {
+      const text = `${header}\n\`\`\`\n${payload}\n\`\`\``;
+      if (map[key]) {
+        try {
+          await tgApi('editMessageText', { chat_id: cfg.chatId, message_id: map[key], text, parse_mode: 'Markdown' });
+          return;
+        } catch(e) { /* message gone — fall through and re-send */ }
+      }
+      const sent = await tgApi('sendMessage', { chat_id: cfg.chatId, text, parse_mode: 'Markdown' });
+      map[key] = sent.message_id;
+      tgSaveMsgMap(map);
+    } else {
+      // Too big for a text message — mirror as an editable document instead
+      const blob = new Blob([payload], { type: 'application/json' });
+      if (map[key]) {
+        try {
+          const editForm = new FormData();
+          editForm.append('chat_id', cfg.chatId);
+          editForm.append('message_id', map[key]);
+          editForm.append('media', JSON.stringify({ type: 'document', media: 'attach://gkkfile', caption: header }));
+          editForm.append('gkkfile', blob, `${key}.json`);
+          await tgApi('editMessageMedia', editForm, true);
+          return;
+        } catch(e) { /* fall through and re-send */ }
+      }
+      const form = new FormData();
+      form.append('chat_id', cfg.chatId);
+      form.append('caption', header);
+      form.append('document', blob, `${key}.json`);
+      const sentDoc = await tgApi('sendDocument', form, true);
+      map[key] = sentDoc.message_id;
+      tgSaveMsgMap(map);
+    }
+  } catch(e) {
+    console.warn('Telegram mirror write failed for ' + key, e);
+  }
+}
+
+async function tgSendAlert(text) {
+  const cfg = tgSettings();
+  if (!cfg.enabled || !cfg.token || !cfg.chatId) return;
+  try { await tgApi('sendMessage', { chat_id: cfg.chatId, text }); } catch(e) {}
+}
+
+// ── /export and /import command handling ─────
+async function tgHandleExportCommand(cfg) {
+  const allData = {
+    products: DB.get('products'), bills: DB.get('bills'), udhar: DB.get('udhar'),
+    returns: DB.get('returns'), settings: DB.getObj('settings'), exported: new Date().toISOString()
+  };
+  const blob = new Blob([JSON.stringify(allData, null, 2)], { type: 'application/json' });
+  const form = new FormData();
+  form.append('chat_id', cfg.chatId);
+  form.append('caption', `📦 Full GKK backup — ${todayStr()}`);
+  form.append('document', blob, `GKK_backup_${todayStr()}.json`);
+  await tgApi('sendDocument', form, true);
+}
+
+function tgApplyImport(data) {
+  if (data.products) { LOCAL.set('products', data.products); productsWrite(data.products); }
+  if (data.bills) { LOCAL.set('bills', data.bills); billsWrite(data.bills); }
+  if (data.udhar) { LOCAL.set('udhar', data.udhar); udharWrite(data.udhar); }
+  if (data.returns) { LOCAL.set('returns', data.returns); returnsWrite(data.returns); }
+  if (data.settings) { LOCAL.set('settings', data.settings); settingsWrite(data.settings); }
+  toast('✅ Imported from Telegram — reloading...');
+  setTimeout(() => location.reload(), 1200);
+}
+
+async function tgHandleImportDocument(document, cfg) {
+  try {
+    const fileInfo = await tgApi('getFile', { file_id: document.file_id });
+    const fileUrl = `https://api.telegram.org/file/bot${cfg.token}/${fileInfo.file_path}`;
+    const res = await fetch(fileUrl);
+    const data = await res.json();
+    tgApplyImport(data);
+    await tgApi('sendMessage', { chat_id: cfg.chatId, text: '✅ Import complete. GKK data restored from that file.' });
+  } catch(e) {
+    await tgApi('sendMessage', { chat_id: cfg.chatId, text: '❌ Import failed: ' + e.message });
+  }
+}
+
+// ── Long-poll for /export and /import (admin-only) ──
+// NOTE: GKK is a static site with no backend server, so this only
+// runs while the app is open in a tab. Commands sent while the app
+// is fully closed will be picked up the next time it's opened.
+function tgStartPolling() {
+  const cfg = tgSettings();
+  if (!cfg.enabled || !cfg.token || !cfg.chatId || TG_POLLING) return;
+  TG_POLLING = true;
+  tgPollLoop();
+}
+function tgStopPolling() { TG_POLLING = false; }
+
+async function tgPollLoop() {
+  if (!TG_POLLING) return;
+  const cfg = tgSettings();
+  try {
+    const updates = await tgApi('getUpdates', { offset: tgOffset, timeout: 25, allowed_updates: ['message', 'channel_post'] });
+    for (const u of updates) {
+      tgOffset = u.update_id + 1;
+      const msg = u.message || u.channel_post;
+      if (!msg) continue;
+      if (String(msg.chat?.id) !== String(cfg.chatId)) continue; // only this channel/chat
+      const fromId = msg.from ? String(msg.from.id) : null;
+      if (fromId && cfg.adminId && fromId !== String(cfg.adminId)) continue; // admin-only
+
+      const text = (msg.text || '').trim();
+      if (text === '/export') {
+        await tgHandleExportCommand(cfg);
+      } else if (text === '/import') {
+        tgAwaitingImportFrom = cfg.chatId;
+        await tgApi('sendMessage', { chat_id: cfg.chatId, text: '📤 Send the backup .json file now to restore.' });
+      } else if (tgAwaitingImportFrom === cfg.chatId && msg.document) {
+        tgAwaitingImportFrom = null;
+        await tgHandleImportDocument(msg.document, cfg);
+      }
+    }
+  } catch(e) {
+    console.warn('Telegram poll error', e);
+  }
+  if (TG_POLLING) tgPollLoop();
+}
+
+// ── DUAL WRITE: LOCAL + FIREBASE + TELEGRAM ──
 async function dualWrite(collection, key, data) {
   // 1. Always write locally first (instant, never fails)
   LOCAL.set(key, data);
 
-  // 2. Try writing to Firebase
+  // 2. Always mirror to Telegram too — this runs in parallel with
+  //    Firestore, not just as a fallback, so the channel stays a
+  //    live, editable copy of every table no matter what Firestore does.
+  tgMirrorWrite(key, data);
+
+  // 3. Try writing to Firebase
   if (firebaseReady && isOnline) {
     try {
       updateDbStatus('syncing');
@@ -134,6 +312,7 @@ async function dualWrite(collection, key, data) {
       addToSyncQueue(collection, key, data);
       updateDbStatus('offline');
       showOfflineNotification(`Data saved locally. Will sync when online.`);
+      tgSendAlert(`⚠️ Firestore write failed for "${key}". Your data is safe — saved locally and mirrored to this channel.`);
     }
   } else {
     // Queue for later
@@ -425,6 +604,72 @@ window.skipPermissions = function() {
   localStorage.setItem('gkk_permissions_asked', 'true');
 };
 
+// ── TELEGRAM SETTINGS UI HOOKS ────────────────
+function loadTelegramSettingsUI() {
+  const cfg = tgSettings();
+  const tokenEl = document.getElementById('tg-token-input');
+  const chatEl = document.getElementById('tg-chatid-input');
+  const adminEl = document.getElementById('tg-adminid-input');
+  const enabledEl = document.getElementById('tg-enabled-toggle');
+  if (tokenEl) tokenEl.value = cfg.token || '';
+  if (chatEl) chatEl.value = cfg.chatId || '';
+  if (adminEl) adminEl.value = cfg.adminId || '5488677608';
+  if (enabledEl) enabledEl.checked = !!cfg.enabled;
+  updateTgStatusUI();
+}
+
+function updateTgStatusUI() {
+  const el = document.getElementById('tg-status');
+  if (!el) return;
+  const cfg = tgSettings();
+  if (!cfg.token || !cfg.chatId) { el.textContent = '⚪ Not configured'; return; }
+  el.textContent = cfg.enabled ? (TG_POLLING ? '🟢 Active — listening for commands' : '🟡 Enabled (starting...)') : '🔴 Disabled';
+}
+
+window.saveTelegramSettings = async function() {
+  const token = document.getElementById('tg-token-input').value.trim();
+  const chatId = document.getElementById('tg-chatid-input').value.trim();
+  const adminId = document.getElementById('tg-adminid-input').value.trim() || '5488677608';
+  const enabled = document.getElementById('tg-enabled-toggle').checked;
+
+  if (enabled && (!token || !chatId)) {
+    toast('⚠️ Bot token and channel/chat ID are required to enable sync');
+    return;
+  }
+
+  tgSaveSettings({ token, chatId, adminId, enabled });
+  tgStopPolling();
+
+  if (enabled) {
+    const ok = await tgTestConnection();
+    if (ok) {
+      tgStartPolling();
+      toast('✅ Telegram sync enabled');
+    }
+  } else {
+    toast('Telegram sync disabled');
+  }
+  updateTgStatusUI();
+};
+
+window.testTelegramConnection = async function() {
+  const token = document.getElementById('tg-token-input').value.trim();
+  if (!token) { toast('Enter a bot token first'); return; }
+  tgSaveSettings({ ...tgSettings(), token });
+  await tgTestConnection();
+};
+
+window.telegramBackupNow = async function() {
+  const cfg = tgSettings();
+  if (!cfg.token || !cfg.chatId) { toast('⚠️ Configure Telegram settings first'); return; }
+  try {
+    await tgHandleExportCommand(cfg);
+    toast('✅ Backup sent to Telegram channel');
+  } catch(e) {
+    toast('❌ Backup failed: ' + e.message);
+  }
+};
+
 // ── OVERRIDE DB WRITES TO USE DUAL WRITE ─────
 // Wrap the key data-mutation functions to also write to Firebase
 function billsWrite(bills) { dualWrite('gkk_data', 'bills', bills); }
@@ -451,6 +696,9 @@ window.addEventListener('load', async () => {
 
   // Init Firebase in background
   initFirebase().catch(console.warn);
+
+  // Start Telegram bot polling in background (if enabled in settings)
+  tgStartPolling();
 
   // Inject DB status indicator into header
   injectDbStatusUI();
@@ -1362,6 +1610,7 @@ function loadSettings() {
     const el = document.getElementById('set-' + f);
     if (el && s[f]) el.value = s[f];
   });
+  loadTelegramSettingsUI();
 }
 
 function saveSettings() {
